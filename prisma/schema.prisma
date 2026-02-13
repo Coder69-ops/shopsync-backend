@@ -1,0 +1,271 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Enums for type safety
+enum Sender {
+  USER
+  BOT
+}
+
+enum MsgType {
+  TEXT
+  AUDIO
+  IMAGE
+}
+
+enum OrderStatus {
+  DRAFT
+  CONFIRMED
+  SHIPPED
+  DELIVERED
+  CANCELLED
+}
+
+enum UserRole {
+  ADMIN      // Shop Owner
+  SUPERADMIN // Platform Owner (You)
+}
+
+enum SubscriptionPlan {
+  FREE
+  BASIC
+  PRO
+}
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String   // Hashed
+  role      UserRole     @default(ADMIN)
+  shopId    String?  // Null for Superadmin
+  shop      Shop?    @relation(fields: [shopId], references: [id])
+  createdAt DateTime @default(now())
+
+  // Subscription & Onboarding
+  trialEndsAt       DateTime? // Nullable initially, set on complete signup
+  subscriptionTier  SubscriptionPlan     @default(FREE)
+  isActive          Boolean  @default(true)
+  onboardingCompleted Boolean @default(false)
+}
+
+model Shop {
+  id          String   @id @default(uuid())
+  name        String
+  email       String   @unique
+  ownerName   String?
+  accessToken String?  // Facebook Page Access Token
+  pageId      String?  // Facebook Page ID
+  plan        SubscriptionPlan     @default(FREE)
+  
+  // Dynamic Configuration
+  currencySymbol String @default("$")
+  currencyCode   String @default("USD")
+  taxRate        Decimal @default(0.0)
+  timezone       String @default("UTC")
+  dateFormat     String @default("dd/MM/yyyy")
+  
+  // Branding
+  logoUrl        String?
+  brandColor     String?  @default("#6366F1") // Default Indigo
+  
+  // Business Details (for Invoice)
+  address        String?
+  phone          String?  // Public usage
+  emailSupport   String?  // Public usage
+  website        String?
+  
+  // Legal
+  vatNumber      String?
+  termsUrl       String?
+  privacyUrl     String?
+  
+  // Socials
+  socialLinks    Json?    // { "facebook": "", "instagram": "", "youtube": "" }
+  
+  // AI Settings
+  deliveryCharge Decimal?
+  minOrderValue  Decimal?
+  confirmationTemplate String? // Template for order confirmation msg
+  isActive       Boolean  @default(true)
+  
+  aiConfig       Json?    // { "tone": "Friendly", "useEmojis": true, "greeting": "..." }
+  
+  createdAt      DateTime @default(now())
+  
+  users          User[]
+  products       Product[]
+  orders         Order[]
+  conversations  Conversation[]
+  usageLogs      UsageLog[]
+  customers      Customer[]
+  campaigns      Campaign[]
+  posts          Post[]
+  comments       Comment[]
+}
+
+enum CampaignStatus {
+  DRAFT
+  SCHEDULED
+  SENDING
+  SENT
+  FAILED
+}
+
+model Campaign {
+  id          String         @id @default(uuid())
+  shopId      String
+  shop        Shop           @relation(fields: [shopId], references: [id])
+  name        String
+  message     String
+  status      CampaignStatus @default(DRAFT)
+  audience    String?        // Filter criteria: "ALL", "VIP", "RECENT_24H"
+  
+  scheduledAt DateTime?
+  sentAt      DateTime?
+  
+  stats       Json?          // { "sent": 100, "failed": 2 }
+  
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+}
+
+model Customer {
+  id        String   @id @default(uuid())
+  psid      String   // Page Scoped ID from Facebook
+  name      String?
+  profilePic String?
+  email     String?
+  phone     String?
+  
+  tags      String[] // e.g. ["VIP", "Refunded"]
+  notes     String?  
+  
+  shopId    String
+  shop      Shop     @relation(fields: [shopId], references: [id])
+  
+  orders    Order[]
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([shopId, psid]) // A customer is unique to a shop by their PSID
+}
+
+model Product {
+  id          String   @id @default(uuid())
+  shopId      String
+  shop        Shop     @relation(fields: [shopId], references: [id])
+  name        String
+  price       Decimal
+  stock       Int      @default(0)
+  description String?  // Used for RAG context
+  
+  // New Fields
+  sku         String?  
+  category    String?  @default("General")
+  imageUrl    String?
+  unit        String?  @default("pcs")
+  isActive    Boolean  @default(true)
+  attributes  Json?    // { "color": "red", "size": "XL" }
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([shopId, sku]) // SKU must be unique per shop
+}
+
+model Conversation {
+  id             String   @id @default(uuid())
+  shopId         String
+  shop           Shop     @relation(fields: [shopId], references: [id])
+  psid           String   // User's Page Scoped ID (Facebook User ID)
+  status         String   @default("ACTIVE") // ACTIVE, PAUSED
+  lastMessage    String?
+  updatedAt      DateTime @updatedAt
+  
+  messages       Message[]
+  
+  @@unique([shopId, psid])
+}
+
+model Message {
+  id             String   @id @default(uuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id])
+  sender         Sender   
+  content        String   // Text content or Audio URL
+  type           MsgType  @default(TEXT)
+  createdAt      DateTime @default(now())
+}
+
+model Order {
+  id              String      @id @default(uuid())
+  shopId          String
+  shop            Shop        @relation(fields: [shopId], references: [id])
+  
+  customerId      String?
+  customer        Customer?   @relation(fields: [customerId], references: [id])
+  
+  customerName    String?
+  customerPhone   String?
+  customerAddress String?
+  items           String?     // Flattened items list for quick view
+  totalPrice      Decimal?
+  status          OrderStatus @default(DRAFT)
+  rawExtract      Json?       // The JSON extracted by AI
+  trackingId      String?     // Courier Tracking ID (e.g. SFS-1234)
+  courierName     String?     // e.g. "Steadfast", "Pathao"
+  shipmentStatus  String?     // e.g. "PENDING", "PICKED_UP", "DELIVERED"
+  createdAt       DateTime    @default(now())
+  source          OrderSource @default(MANUAL)
+}
+
+enum OrderSource {
+  MANUAL
+  AI
+  WEB
+}
+
+model Post {
+  id          String    @id @default(uuid())
+  facebookId  String    @unique // Facebook Post ID
+  content     String?   
+  shopId      String
+  shop        Shop      @relation(fields: [shopId], references: [id])
+  comments    Comment[]
+  createdAt   DateTime  @default(now())
+}
+
+model Comment {
+  id              String   @id @default(uuid())
+  facebookId      String   @unique // Facebook Comment ID
+  postId          String
+  post            Post     @relation(fields: [postId], references: [id])
+  shopId          String
+  shop            Shop     @relation(fields: [shopId], references: [id])
+  senderName      String?
+  senderPsid      String?
+  content         String   // The customer's comment
+  aiReply         String?  // The automated reply generated by AI
+  status          String   @default("PENDING") // PENDING, REPLIED, FAILED
+  createdAt       DateTime @default(now())
+}
+
+model UsageLog {
+  id        String   @id @default(uuid())
+  shopId    String
+  shop      Shop     @relation(fields: [shopId], references: [id])
+  type      String   // MESSAGE_AI, ORDER_EXTRACTED, VOICE_WHISPER
+  quantity  Int      @default(1)
+  createdAt DateTime @default(now())
+}

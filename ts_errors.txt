@@ -1,0 +1,23 @@
+src/bootstrap.ts(28,5): error TS2322: Type '{ email: string; password: string; role: any; }' is not assignable to type '(Without<UserCreateInput, UserUncheckedCreateInput> & UserUncheckedCreateInput) | (Without<...> & UserCreateInput)'.
+  Type '{ email: string; password: string; role: any; }' is not assignable to type 'Without<UserUncheckedCreateInput, UserCreateInput> & UserCreateInput'.
+    Property 'id' is missing in type '{ email: string; password: string; role: any; }' but required in type 'UserCreateInput'.
+src/bootstrap.ts(41,5): error TS2322: Type '{ name: string; pageId: string; accessToken: string; plan: any; }' is not assignable to type '(Without<ShopCreateInput, ShopUncheckedCreateInput> & ShopUncheckedCreateInput) | (Without<...> & ShopCreateInput)'.
+  Type '{ name: string; pageId: string; accessToken: string; plan: any; }' is not assignable to type 'Without<ShopUncheckedCreateInput, ShopCreateInput> & ShopCreateInput'.
+    Property 'id' is missing in type '{ name: string; pageId: string; accessToken: string; plan: any; }' but required in type 'ShopCreateInput'.
+src/bootstrap.ts(58,5): error TS2322: Type '{ email: string; password: string; role: any; shopId: string; }' is not assignable to type '(Without<UserCreateInput, UserUncheckedCreateInput> & UserUncheckedCreateInput) | (Without<...> & UserCreateInput)'.
+  Type '{ email: string; password: string; role: any; shopId: string; }' is not assignable to type 'Without<UserCreateInput, UserUncheckedCreateInput> & UserUncheckedCreateInput'.
+    Property 'id' is missing in type '{ email: string; password: string; role: any; shopId: string; }' but required in type 'UserUncheckedCreateInput'.
+src/order/order.service.ts(37,7): error TS2322: Type '{ shopId: string; customerName: any; customerPhone: any; customerAddress: any; items: any; totalPrice: number; rawExtract: any; status: "CONFIRMED"; }' is not assignable to type '(Without<OrderCreateInput, OrderUncheckedCreateInput> & OrderUncheckedCreateInput) | (Without<...> & OrderCreateInput)'.
+  Type '{ shopId: string; customerName: any; customerPhone: any; customerAddress: any; items: any; totalPrice: number; rawExtract: any; status: "CONFIRMED"; }' is not assignable to type 'Without<OrderCreateInput, OrderUncheckedCreateInput> & OrderUncheckedCreateInput'.
+    Property 'id' is missing in type '{ shopId: string; customerName: any; customerPhone: any; customerAddress: any; items: any; totalPrice: number; rawExtract: any; status: "CONFIRMED"; }' but required in type 'OrderUncheckedCreateInput'.
+src/product/product.service.ts(17,9): error TS2561: Object literal may only specify known properties, but 'shop' does not exist in type '(Without<ProductCreateInput, ProductUncheckedCreateInput> & ProductUncheckedCreateInput) | (Without<...> & ProductCreateInput)'. Did you mean to write 'Shop'?
+src/superadmin/superadmin.service.ts(34,13): error TS2561: Object literal may only specify known properties, but 'users' does not exist in type 'ShopCountOutputTypeSelect<DefaultArgs>'. Did you mean to write 'User'?
+src/webhook/webhook.processor.ts(85,19): error TS2322: Type '{ shopId: string; type: string; }' is not assignable to type '(Without<UsageLogCreateInput, UsageLogUncheckedCreateInput> & UsageLogUncheckedCreateInput) | (Without<...> & UsageLogCreateInput)'.
+  Type '{ shopId: string; type: string; }' is not assignable to type 'Without<UsageLogCreateInput, UsageLogUncheckedCreateInput> & UsageLogUncheckedCreateInput'.
+    Property 'id' is missing in type '{ shopId: string; type: string; }' but required in type 'UsageLogUncheckedCreateInput'.
+src/webhook/webhook.processor.ts(102,17): error TS2322: Type '{ shopId: string; type: string; }' is not assignable to type '(Without<UsageLogCreateInput, UsageLogUncheckedCreateInput> & UsageLogUncheckedCreateInput) | (Without<...> & UsageLogCreateInput)'.
+  Type '{ shopId: string; type: string; }' is not assignable to type 'Without<UsageLogCreateInput, UsageLogUncheckedCreateInput> & UsageLogUncheckedCreateInput'.
+    Property 'id' is missing in type '{ shopId: string; type: string; }' but required in type 'UsageLogUncheckedCreateInput'.
+src/webhook/webhook.processor.ts(122,21): error TS2322: Type '{ shopId: string; type: string; }' is not assignable to type '(Without<UsageLogCreateInput, UsageLogUncheckedCreateInput> & UsageLogUncheckedCreateInput) | (Without<...> & UsageLogCreateInput)'.
+  Type '{ shopId: string; type: string; }' is not assignable to type 'Without<UsageLogCreateInput, UsageLogUncheckedCreateInput> & UsageLogUncheckedCreateInput'.
+    Property 'id' is missing in type '{ shopId: string; type: string; }' but required in type 'UsageLogUncheckedCreateInput'.
