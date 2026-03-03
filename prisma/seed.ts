@@ -1,11 +1,54 @@
-import { PrismaClient, OrderStatus, SubscriptionPlan } from '@prisma/client';
+import { PrismaClient, OrderStatus, SubscriptionPlan, UserRole } from '@prisma/client';
+import * as bcrypt from 'bcrypt';
 
 const prisma = new PrismaClient();
 
 async function main() {
     console.log('🌱 Starting seed...');
 
-    // 1. Find or Create a Shop
+    const hashedPassword = await bcrypt.hash('admin123', 10);
+
+    // 1. Create SuperAdmin if not exists
+    const superadminEmail = 'superadmin@shopsync.it.com';
+    const existingSuperadmin = await prisma.user.findUnique({
+        where: { email: superadminEmail }
+    });
+
+    if (!existingSuperadmin) {
+        console.log('Creating SuperAdmin...');
+        await prisma.user.create({
+            data: {
+                email: superadminEmail,
+                password: hashedPassword,
+                role: UserRole.SUPERADMIN,
+                isActive: true,
+                onboardingCompleted: true,
+            }
+        });
+        console.log('✅ SuperAdmin created: superadmin@shopsync.it.com / admin123');
+    } else {
+        console.log('ℹ️ SuperAdmin already exists.');
+    }
+
+    // 1.5 Create PlanConfigs
+    console.log('Synchronizing PlanConfigs...');
+    const planConfigs = [
+        { plan: SubscriptionPlan.FREE, monthlyPrice: 0, messageLimit: 100, orderLimit: 10, canUseVoiceAI: false, canUseCourier: false, removeWatermark: false },
+        { plan: SubscriptionPlan.BASIC, monthlyPrice: 1500, messageLimit: 1000, orderLimit: 100, canUseVoiceAI: false, canUseCourier: false, removeWatermark: false },
+        { plan: SubscriptionPlan.PRO, monthlyPrice: 3000, messageLimit: -1, orderLimit: -1, canUseVoiceAI: true, canUseCourier: true, removeWatermark: true },
+    ];
+
+    for (const config of planConfigs) {
+        await prisma.planConfig.upsert({
+            where: { plan: config.plan },
+            update: {},
+            create: config
+        });
+    }
+    console.log('✅ PlanConfigs synchronized.');
+
+
+    // 2. Find or Create a Shop
     let shop = await prisma.shop.findFirst();
 
     if (!shop) {
@@ -13,15 +56,16 @@ async function main() {
         shop = await prisma.shop.create({
             data: {
                 name: 'Fashion Hub Demo',
-                email: 'fashionhub@demo.com', // Added required email
-                pageId: '1234567890_DEMO',
+                email: 'fashionhub@demo.com',
+                platformIds: { facebook: '1234567890_DEMO' },
                 accessToken: 'mock_token',
                 plan: SubscriptionPlan.PRO,
                 users: {
                     create: {
                         email: 'admin@demo.com',
-                        password: 'hashed_password_placeholder', // You'd normally hash this
-                        role: 'ADMIN',
+                        password: hashedPassword,
+                        role: UserRole.ADMIN,
+                        onboardingCompleted: true,
                     }
                 },
                 aiConfig: {
@@ -36,26 +80,26 @@ async function main() {
 
     console.log(`Using Shop: ${shop.name} (${shop.id})`);
 
-    // 2. Create Mock Customers
+    // 3. Create Mock Customers
     const customers = [];
-    for (let i = 1; i <= 10; i++) {
-        const psid = `user_${Math.floor(Math.random() * 1000000)}`;
+    const customerCount = 5; // Reduced for speed
+    for (let i = 1; i <= customerCount; i++) {
+        const psid = `user_demo_${i}`;
 
-        // Check if customer exists (to avoid unique constraint errors on re-runs)
         let customer = await prisma.customer.findFirst({
-            where: { shopId: shop.id, psid: psid }
+            where: { shopId: shop.id, externalId: psid }
         });
 
         if (!customer) {
             customer = await prisma.customer.create({
                 data: {
                     shopId: shop.id,
-                    psid: psid,
+                    externalId: psid,
+                    platform: 'FACEBOOK',
                     name: `Customer ${i}`,
                     email: `customer${i}@example.com`,
                     phone: `0170000000${i}`,
                     tags: i % 3 === 0 ? ['VIP'] : ['NEW'],
-                    notes: i % 2 === 0 ? 'Prefers cash on delivery' : null,
                 },
             });
         }
@@ -63,33 +107,24 @@ async function main() {
     }
     console.log(`✅ Created/Found ${customers.length} Customers`);
 
-    // 3. Create Mock Orders
-    // distribute 50 orders across these customers
-    // varied statuses and dates (last 30 days)
-
+    // 4. Create Mock Orders
     const statuses: OrderStatus[] = [
         OrderStatus.DRAFT,
         OrderStatus.CONFIRMED,
-        OrderStatus.CONFIRMED, // Weight confirmed higher
-        OrderStatus.SHIPPED,
         OrderStatus.SHIPPED,
         OrderStatus.DELIVERED,
-        OrderStatus.DELIVERED,
-        OrderStatus.DELIVERED,
-        OrderStatus.CANCELLED
     ];
 
     let orderCount = 0;
-
     for (const customer of customers) {
-        // 3-7 orders per customer
-        const numOrders = Math.floor(Math.random() * 5) + 3;
+        const existingOrder = await prisma.order.findFirst({ where: { customerId: customer.id } });
+        if (existingOrder) continue;
 
+        const numOrders = 2;
         for (let j = 0; j < numOrders; j++) {
             const status = statuses[Math.floor(Math.random() * statuses.length)];
-            const daysAgo = Math.floor(Math.random() * 30);
             const date = new Date();
-            date.setDate(date.getDate() - daysAgo);
+            date.setDate(date.getDate() - Math.floor(Math.random() * 10));
 
             await prisma.order.create({
                 data: {
@@ -97,20 +132,27 @@ async function main() {
                     customerId: customer.id,
                     customerName: customer.name,
                     customerPhone: customer.phone,
-                    customerAddress: `House ${Math.floor(Math.random() * 50)}, Road ${Math.floor(Math.random() * 20)}, Dhaka`,
-                    items: `${Math.floor(Math.random() * 3) + 1}x Item #${Math.floor(Math.random() * 100)}`,
-                    totalPrice: (Math.floor(Math.random() * 50) + 10) * 100, // 1000 - 6000
+                    customerAddress: 'Dhaka, Bangladesh',
+                    orderItems: {
+                        create: [
+                            {
+                                name: 'Demo Product',
+                                quantity: 1,
+                                unitPrice: 1500,
+                                total: 1500,
+                            }
+                        ]
+                    },
+                    totalPrice: 1500,
                     status: status,
                     createdAt: date,
-                    trackingId: status === OrderStatus.SHIPPED || status === OrderStatus.DELIVERED ? `TRK-${Math.floor(Math.random() * 9000) + 1000}` : null,
-                    courierName: status === OrderStatus.SHIPPED || status === OrderStatus.DELIVERED ? 'Steadfast' : null,
                 },
             });
             orderCount++;
         }
     }
 
-    console.log(`✅ Created ${orderCount} Orders for ${customers.length} customers.`);
+    console.log(`✅ Created ${orderCount} new Orders.`);
 }
 
 main()

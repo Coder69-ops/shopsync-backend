@@ -9,6 +9,12 @@ import {
   Req,
 } from '@nestjs/common';
 import { AuthService } from './auth.service';
+import { UploadService } from '../upload/upload.service';
+import { FileInterceptor } from '@nestjs/platform-express';
+import {
+  UploadedFile,
+  UseInterceptors,
+} from '@nestjs/common';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { JwtAuthGuard } from './jwt-auth.guard';
@@ -16,7 +22,10 @@ import { CurrentUser } from './current-user.decorator';
 
 @Controller('auth')
 export class AuthController {
-  constructor(private authService: AuthService) { }
+  constructor(
+    private authService: AuthService,
+    private uploadService: UploadService,
+  ) { }
 
   @HttpCode(HttpStatus.OK)
   @Post('login')
@@ -84,8 +93,38 @@ export class AuthController {
   @Patch('update-profile')
   async updateProfile(
     @CurrentUser('id') userId: string,
-    @Body() body: { name?: string; phone?: string },
+    @Body() body: { name?: string; phone?: string; profilePic?: string },
   ) {
     return this.authService.updateProfile(userId, body);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  @Patch('update-preferences')
+  async updatePreferences(
+    @CurrentUser('id') userId: string,
+    @Body() body: { themePreference?: string; languagePreference?: string; emailNotifications?: boolean },
+  ) {
+    return this.authService.updatePreferences(userId, body);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('profile-image')
+  @UseInterceptors(FileInterceptor('file'))
+  async uploadProfileImage(@UploadedFile() file: any) {
+    const url = await this.uploadService.uploadFile(file, 'profiles');
+    return { url };
+  }
+
+  @HttpCode(HttpStatus.OK)
+  @Post('verify-email')
+  async verifyEmail(@Body('token') token: string) {
+    return this.authService.verifyEmail(token);
+  }
+
+  @HttpCode(HttpStatus.OK)
+  @Post('resend-verification')
+  async resendVerification(@Body('email') email: string) {
+    return this.authService.resendVerificationEmail(email);
   }
 }

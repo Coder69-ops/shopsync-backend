@@ -7,6 +7,7 @@ import {
   Param,
   Delete,
   UseGuards,
+  Query,
 } from '@nestjs/common';
 import { ProductService } from './product.service';
 import { CreateProductDto } from './dto/create-product.dto';
@@ -44,10 +45,11 @@ export class ProductController {
   }
 
   @Get('sample-csv')
-  getSampleCsv(@Res() res: Response) {
-    const csv = this.productService.getSampleCsv();
+  getSampleCsv(@Query('type') type: string, @Res() res: Response) {
+    const csv = this.productService.getSampleCsv(type);
     res.header('Content-Type', 'text/csv');
-    res.attachment('products_sample.csv');
+    const filename = type ? `${type.toLowerCase()}_sample.csv` : 'products_sample.csv';
+    res.attachment(filename);
     return res.send(csv);
   }
 

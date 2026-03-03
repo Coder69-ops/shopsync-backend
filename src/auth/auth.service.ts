@@ -1,10 +1,11 @@
-import { Injectable, UnauthorizedException, BadRequestException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, BadRequestException, NotFoundException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { DatabaseService } from '../database/database.service';
 import * as bcrypt from 'bcrypt';
 import { EmailService } from '../email/email.service';
 import { SystemConfigService } from '../superadmin/system-config.service';
 import axios from 'axios';
+import { v4 as uuidv4 } from 'uuid';
 
 @Injectable()
 export class AuthService {
@@ -51,10 +52,16 @@ export class AuthService {
             throw new UnauthorizedException('Invalid credentials');
         }
 
+        if (!user.isEmailVerified && user.role !== 'SUPERADMIN') {
+            console.log(`[AUTH] Step 5.5: LOGIN FAILED - Email not verified`);
+            throw new UnauthorizedException('EMAIL_NOT_VERIFIED');
+        }
+
         // Add proper flags to payload
         const payload = {
             sub: user.id,
             email: user.email,
+            profilePic: (user as any).profilePic,
             role: user.role,
             shopId: user.shopId,
             trialEndsAt: user.trialEndsAt,
@@ -65,6 +72,9 @@ export class AuthService {
             hasSeenTour: user.hasSeenTour,
             isActive: user.isActive,
             shopIsActive: user.shop?.isActive ?? true,
+            themePreference: (user as any).themePreference,
+            languagePreference: (user as any).languagePreference,
+            emailNotifications: (user as any).emailNotifications,
         };
 
         console.log(`[AUTH] Step 6: JWT Payload created:`, payload);
@@ -78,18 +88,23 @@ export class AuthService {
         };
     }
 
-    async signUp(email: string, pass: string, shopName: string): Promise<any> {
+    async signUp(email: string, pass: string, shopName?: string): Promise<any> {
         // Check if user exists
         const existing = await this.db.user.findUnique({ where: { email } });
         if (existing) throw new UnauthorizedException('User already exists');
 
         const hashedPassword = await bcrypt.hash(pass, 10);
+        const verificationToken = uuidv4();
+        const verificationTokenExpires = new Date();
+        verificationTokenExpires.setHours(verificationTokenExpires.getHours() + 24);
+
+        const defaultShopName = shopName || `${email.split('@')[0]}'s Shop`;
 
         // Create User + Shop
         const user = await this.db.$transaction(async (tx: any) => {
             const shop = await tx.shop.create({
                 data: {
-                    name: shopName,
+                    name: defaultShopName,
                     email: email, // use user email as shop email default
                     plan: 'FREE',
                     isActive: true,
@@ -105,17 +120,72 @@ export class AuthService {
                     shopId: shop.id,
                     trialEndsAt: null, // No trial until onboarding plan selection
                     onboardingCompleted: false, // Must complete onboarding
+                    isEmailVerified: false,
+                    verificationToken,
+                    verificationTokenExpires,
                 },
             });
         });
 
-        return this.signIn(email, pass);
+        // Send verification email
+        await this.emailService.sendVerificationEmail(email, verificationToken);
+
+        return {
+            message: 'Registration successful. Please check your email to verify your account.',
+            email: user.email,
+        };
+    }
+
+    async verifyEmail(token: string) {
+        const user = await this.db.user.findFirst({
+            where: {
+                verificationToken: token,
+                verificationTokenExpires: { gt: new Date() },
+            },
+        });
+
+        if (!user) {
+            throw new BadRequestException('Invalid or expired verification token');
+        }
+
+        await this.db.user.update({
+            where: { id: user.id },
+            data: {
+                isEmailVerified: true,
+                verificationToken: null,
+                verificationTokenExpires: null,
+            },
+        });
+
+        return { message: 'Email verified successfully. You can now log in.' };
+    }
+
+    async resendVerificationEmail(email: string) {
+        const user = await this.db.user.findUnique({ where: { email } });
+        if (!user) throw new NotFoundException('User not found');
+        if (user.isEmailVerified) throw new BadRequestException('Email is already verified');
+
+        const verificationToken = uuidv4();
+        const verificationTokenExpires = new Date();
+        verificationTokenExpires.setHours(verificationTokenExpires.getHours() + 24);
+
+        await this.db.user.update({
+            where: { id: user.id },
+            data: {
+                verificationToken,
+                verificationTokenExpires,
+            },
+        });
+
+        await this.emailService.sendVerificationEmail(email, verificationToken);
+
+        return { message: 'Verification email resent successfully.' };
     }
 
     async completeOnboarding(userId: string, data: any) {
         console.log(`[AUTH] Completing onboarding for user ${userId}`);
 
-        // 1. Update User
+        // Initial update to lock the state (optional but keeping for consistency if needed)
         await this.db.user.update({
             where: { id: userId },
             data: { onboardingCompleted: true },
@@ -136,6 +206,24 @@ export class AuthService {
         date.setDate(date.getDate() + trialDays);
         const trialEndsAt = date;
 
+        if (data.pageId) {
+            const trimmedPageId = String(data.pageId).trim();
+            const existingShopWithPage = await this.db.shop.findFirst({
+                where: {
+                    id: { not: user.shopId },
+                    platformIds: {
+                        path: ['facebook'],
+                        equals: trimmedPageId,
+                    },
+                },
+            });
+
+            if (existingShopWithPage) {
+                throw new BadRequestException('This Facebook page is already connected to another ShopSync account.');
+            }
+            data.pageId = trimmedPageId;
+        }
+
         // Update User & Shop
 
         await this.db.user.update({
@@ -146,7 +234,7 @@ export class AuthService {
             },
         });
 
-        await this.db.shop.update({
+        const updatedShop = await this.db.shop.update({
             where: { id: user.shopId },
             data: {
                 name: data.shopName,
@@ -164,6 +252,13 @@ export class AuthService {
                 accessToken: data.pageAccessToken,
                 minOrderValue: data.minOrderValue,
                 deliveryCharge: data.deliveryChargeInside,
+
+                // Localization Defaults
+                currencySymbol: '৳',
+                currencyCode: 'BDT',
+                timezone: 'Asia/Dhaka',
+                dateFormat: 'dd/MM/yyyy',
+
                 aiConfig: {
                     deliveryChargeInside: data.deliveryChargeInside,
                     deliveryChargeOutside: data.deliveryChargeOutside,
@@ -175,7 +270,22 @@ export class AuthService {
             },
         });
 
-        // 4. Generate new token with updated claims
+        // 4. Send Welcome Emails
+        try {
+            await this.emailService.sendWelcomeMerchant(user.email, updatedShop.name);
+            await this.emailService.sendNewShopSignupAlert({
+                id: updatedShop.id,
+                name: updatedShop.name,
+                ownerName: updatedShop.ownerName,
+                email: user.email,
+                pageId: data.pageId
+            });
+        } catch (emailError) {
+            console.error('[AUTH] Failed to send welcome emails:', emailError);
+            // Don't block onboarding if email fails
+        }
+
+        // 5. Generate new token with updated claims
         const payload = {
             sub: user.id,
             email: user.email,
@@ -344,6 +454,7 @@ export class AuthService {
             const payload = {
                 sub: user.id,
                 email: user.email,
+                profilePic: user.profilePic,
                 role: user.role,
                 shopId: user.shopId,
                 trialEndsAt: user.trialEndsAt,
@@ -356,6 +467,9 @@ export class AuthService {
                 hasSeenTour: user.hasSeenTour,
                 isActive: user.isActive,
                 shopIsActive: (user as any).shop?.isActive ?? true,
+                themePreference: (user as any).themePreference,
+                languagePreference: (user as any).languagePreference,
+                emailNotifications: (user as any).emailNotifications,
             };
 
             const token = await this.jwtService.signAsync(payload);
@@ -390,11 +504,19 @@ export class AuthService {
         return { success: true, message: 'Password updated successfully' };
     }
 
-    async updateProfile(userId: string, data: { name?: string; phone?: string }) {
+    async updateProfile(userId: string, data: { name?: string; phone?: string; profilePic?: string }) {
         const user = await this.db.user.findUnique({ where: { id: userId }, include: { shop: true } });
         if (!user) throw new UnauthorizedException('User not found');
 
-        // Update the shop's ownerName/phone if the user is an ADMIN
+        // Update User Model (Personal info)
+        if (data.profilePic !== undefined) {
+            await this.db.user.update({
+                where: { id: userId },
+                data: { profilePic: data.profilePic } as any,
+            });
+        }
+
+        // Update Shop Model (Business contact info)
         if (user.shopId) {
             await this.db.shop.update({
                 where: { id: user.shopId },
@@ -405,5 +527,22 @@ export class AuthService {
             });
         }
         return { success: true, message: 'Profile updated successfully' };
+    }
+
+    async updatePreferences(userId: string, data: { themePreference?: string; languagePreference?: string; emailNotifications?: boolean }) {
+        const user = await this.db.user.findUnique({ where: { id: userId } });
+        if (!user) throw new UnauthorizedException('User not found');
+
+        const updateData: any = {};
+        if (data.themePreference !== undefined) updateData.themePreference = data.themePreference;
+        if (data.languagePreference !== undefined) updateData.languagePreference = data.languagePreference;
+        if (data.emailNotifications !== undefined) updateData.emailNotifications = data.emailNotifications;
+
+        await this.db.user.update({
+            where: { id: userId },
+            data: updateData,
+        });
+
+        return { success: true, message: 'Preferences updated successfully', data: updateData };
     }
 }

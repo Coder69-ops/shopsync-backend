@@ -1,11 +1,25 @@
 import { Module } from '@nestjs/common';
-import { SuperadminService } from './superadmin.service';
-import { SuperadminController } from './superadmin.controller';
+import { SuperAdminController } from './superadmin.controller';
+import { SuperAdminService } from './superadmin.service';
 import { DatabaseModule } from '../database/database.module';
+import { AuthModule } from '../auth/auth.module';
+import { HealthService } from './health.service';
+import { BullModule } from '@nestjs/bullmq';
+import { SystemConfigService } from './system-config.service';
+
+import { SystemConfigModule } from './system-config.module';
 
 @Module({
-  imports: [DatabaseModule],
-  controllers: [SuperadminController],
-  providers: [SuperadminService],
+  imports: [
+    DatabaseModule,
+    AuthModule,
+    SystemConfigModule,
+    BullModule.registerQueue({
+      name: 'chat-queue',
+    }),
+  ],
+  controllers: [SuperAdminController],
+  providers: [SuperAdminService, HealthService],
+  exports: [SuperAdminService, SystemConfigModule],
 })
-export class SuperadminModule { }
+export class SuperAdminModule {}

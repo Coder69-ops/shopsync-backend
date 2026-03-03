@@ -3,6 +3,10 @@ import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import helmet from 'helmet';
+import { createBullBoard } from '@bull-board/api';
+import { BullMQAdapter } from '@bull-board/api/bullMQAdapter';
+import { ExpressAdapter } from '@bull-board/express';
+import { getQueueToken } from '@nestjs/bullmq';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
@@ -10,10 +14,47 @@ async function bootstrap() {
   });
 
   // 1. Security Headers
-  app.use(helmet());
+  app.use(
+    helmet({
+      contentSecurityPolicy: false, // Required for BullBoard UI
+    }),
+  );
 
   // 2. CORS
-  app.enableCors();
+  const allowedOrigins = [
+    'http://localhost:3001',
+    'http://localhost:3000',
+    process.env.FRONTEND_URL,
+    process.env.VERCEL_URL,
+    'https://shopsync.it.com',
+    'https://www.shopsync.it.com',
+  ].filter(Boolean) as string[];
+
+  app.enableCors({
+    origin: (
+      origin: string | undefined,
+      callback: (err: Error | null, allow?: boolean) => void,
+    ) => {
+      if (!origin) {
+        callback(null, true);
+        return;
+      }
+
+      const isAllowed = allowedOrigins.some(
+        (ao) =>
+          origin === ao ||
+          origin.endsWith('.vercel.app') ||
+          origin.endsWith('.it.com'),
+      );
+
+      if (isAllowed) {
+        callback(null, true);
+      } else {
+        callback(new Error(`Origin ${origin} not allowed by CORS`));
+      }
+    },
+    credentials: true,
+  });
 
   // 3. Global Validation
   app.useGlobalPipes(
@@ -33,6 +74,20 @@ async function bootstrap() {
     .build();
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('api', app, document);
+
+  // 5. Bull Board
+  const serverAdapter = new ExpressAdapter();
+  serverAdapter.setBasePath('/admin/queues');
+
+  const chatQueue = app.get(getQueueToken('chat-queue'));
+  const syncQueue = app.get(getQueueToken('sync-queue'));
+
+  createBullBoard({
+    queues: [new BullMQAdapter(chatQueue), new BullMQAdapter(syncQueue)],
+    serverAdapter: serverAdapter,
+  });
+
+  app.use('/admin/queues', serverAdapter.getRouter());
 
   await app.listen(process.env.PORT ?? 3000, '0.0.0.0');
 }

@@ -4,9 +4,9 @@ import { CommentController } from './comment.controller';
 import { DatabaseModule } from '../database/database.module';
 
 @Module({
-    imports: [DatabaseModule],
-    controllers: [CommentController],
-    providers: [CommentService],
-    exports: [CommentService],
+  imports: [DatabaseModule],
+  controllers: [CommentController],
+  providers: [CommentService],
+  exports: [CommentService],
 })
-export class CommentModule { }
+export class CommentModule {}

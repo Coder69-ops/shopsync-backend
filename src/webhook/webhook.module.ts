@@ -23,4 +23,4 @@ import { FacebookModule } from '../facebook/facebook.module';
   controllers: [WebhookController],
   providers: [WebhookService, WebhookProcessor],
 })
-export class WebhookModule { }
+export class WebhookModule {}

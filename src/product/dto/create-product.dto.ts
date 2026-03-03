@@ -1,4 +1,11 @@
-import { IsNotEmpty, IsString, IsNumber, IsOptional, IsBoolean, IsObject } from 'class-validator';
+import {
+  IsNotEmpty,
+  IsString,
+  IsNumber,
+  IsOptional,
+  IsBoolean,
+  IsObject,
+} from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateProductDto {
@@ -32,7 +39,9 @@ export class CreateProductDto {
   @IsOptional()
   category?: string;
 
-  @ApiPropertyOptional({ example: 'https://cdn-shopsync.aixplore.me/products/image.jpg' })
+  @ApiPropertyOptional({
+    example: 'https://cdn-shopsync.aixplore.me/products/image.jpg',
+  })
   @IsString()
   @IsOptional()
   imageUrl?: string;
@@ -51,4 +60,12 @@ export class CreateProductDto {
   @IsObject()
   @IsOptional()
   attributes?: any;
+
+  @ApiPropertyOptional({
+    example: 'PHYSICAL',
+    enum: ['PHYSICAL', 'SERVICE', 'DIGITAL'],
+  })
+  @IsString()
+  @IsOptional()
+  type?: 'PHYSICAL' | 'SERVICE' | 'DIGITAL';
 }

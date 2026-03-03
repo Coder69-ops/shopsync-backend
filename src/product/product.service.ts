@@ -1,14 +1,25 @@
-import { Injectable, NotFoundException, ForbiddenException, ConflictException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ForbiddenException,
+  ConflictException,
+} from '@nestjs/common';
 import { DatabaseService } from '../database/database.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
-// eslint-disable-next-line @typescript-eslint/no-var-requires
+import { EmailService } from '../email/email.service';
+import { SystemConfigService } from '../superadmin/system-config.service';
+
 const csv = require('csv-parser');
 import { Readable } from 'stream';
 
 @Injectable()
 export class ProductService {
-  constructor(private readonly databaseService: DatabaseService) { }
+  constructor(
+    private readonly databaseService: DatabaseService,
+    private readonly emailService: EmailService,
+    private readonly systemConfig: SystemConfigService,
+  ) { }
 
   async create(createProductDto: CreateProductDto, shopId: string) {
     // 1. Check Shop Plan & Limits
@@ -60,7 +71,9 @@ export class ProductService {
       });
 
       if (existingProduct) {
-        throw new ConflictException(`SKU "${createProductDto.sku}" is already in use.`);
+        throw new ConflictException(
+          `SKU "${createProductDto.sku}" is already in use.`,
+        );
       }
     }
 
@@ -77,6 +90,7 @@ export class ProductService {
         unit: createProductDto.unit || 'pcs',
         isActive: createProductDto.isActive ?? true,
         attributes: createProductDto.attributes || {},
+        type: createProductDto.type || 'PHYSICAL',
         shop: {
           connect: { id: shopId },
         },
@@ -115,26 +129,56 @@ export class ProductService {
       });
 
       if (existingProduct && existingProduct.id !== id) {
-        throw new ConflictException(`SKU "${updateProductDto.sku}" is already in use.`);
+        throw new ConflictException(
+          `SKU "${updateProductDto.sku}" is already in use.`,
+        );
       }
     }
 
     // 3. Update Product
-    return this.databaseService.product.update({
+    const product = await this.databaseService.product.update({
       where: { id },
       data: {
         ...(updateProductDto.name && { name: updateProductDto.name }),
-        ...(updateProductDto.price !== undefined && { price: updateProductDto.price }),
-        ...(updateProductDto.stock !== undefined && { stock: updateProductDto.stock }),
-        ...(updateProductDto.description !== undefined && { description: updateProductDto.description }),
+        ...(updateProductDto.price !== undefined && {
+          price: updateProductDto.price,
+        }),
+        ...(updateProductDto.stock !== undefined && {
+          stock: updateProductDto.stock,
+        }),
+        ...(updateProductDto.description !== undefined && {
+          description: updateProductDto.description,
+        }),
         ...(updateProductDto.sku && { sku: updateProductDto.sku }),
-        ...(updateProductDto.category && { category: updateProductDto.category }),
-        ...(updateProductDto.imageUrl !== undefined && { imageUrl: updateProductDto.imageUrl }),
+        ...(updateProductDto.category && {
+          category: updateProductDto.category,
+        }),
+        ...(updateProductDto.imageUrl !== undefined && {
+          imageUrl: updateProductDto.imageUrl,
+        }),
         ...(updateProductDto.unit && { unit: updateProductDto.unit }),
-        ...(updateProductDto.isActive !== undefined && { isActive: updateProductDto.isActive }),
-        ...(updateProductDto.attributes && { attributes: updateProductDto.attributes }),
+        ...(updateProductDto.isActive !== undefined && {
+          isActive: updateProductDto.isActive,
+        }),
+        ...(updateProductDto.attributes && {
+          attributes: updateProductDto.attributes,
+        }),
+        ...(updateProductDto.type && { type: updateProductDto.type }),
       },
+      include: { shop: true },
     });
+
+    // 4. Low Stock Alert Trigger
+    const config = (await this.systemConfig.getConfig()) as any;
+    const threshold = config.lowStockThreshold || 5;
+
+    if (updateProductDto.stock !== undefined && product.stock <= threshold && product.shop?.email) {
+      this.emailService.sendLowStockAlert(product.shop.email, product.shop.name, product).catch(err =>
+        console.warn(`[PRODUCT] Failed to send low stock alert: ${err.message}`)
+      );
+    }
+
+    return product;
   }
 
   async remove(id: string, shopId: string) {
@@ -143,7 +187,12 @@ export class ProductService {
     });
   }
 
-  async getLowStockProducts(shopId: string, threshold: number = 5) {
+  async getLowStockProducts(shopId: string, customThreshold?: number) {
+    if (!shopId) return [];
+
+    const config = (await this.systemConfig.getConfig()) as any;
+    const threshold = customThreshold ?? (config.lowStockThreshold || 5);
+
     return this.databaseService.product.findMany({
       where: {
         shopId,
@@ -166,13 +215,15 @@ export class ProductService {
       stream
         .pipe(csv())
         .on('data', (data: any) => results.push(data))
-        .on('error', (err: any) => reject(new ConflictException('Error parsing CSV: ' + err.message)))
+        .on('error', (err: any) =>
+          reject(new ConflictException('Error parsing CSV: ' + err.message)),
+        )
         .on('end', async () => {
           try {
             const createdProducts = [];
             const errors = [];
 
-            // 1. Check Shop Plan & Limits (Basic check - total items)
+            // 1. Check Shop Plan & Limits
             const shop = await this.databaseService.shop.findUnique({
               where: { id: shopId },
               include: { _count: { select: { products: true } } },
@@ -180,63 +231,97 @@ export class ProductService {
 
             if (!shop) throw new NotFoundException('Shop not found');
 
-            let limit = 50; // Increased for Demo
-            if (shop.plan === 'BASIC') limit = 100;
+            let limit = 100; // Demo base
+            if (shop.plan === 'BASIC') limit = 300;
             if (shop.plan === 'PRO') limit = Infinity;
 
+            if (results.length > 500) {
+              return reject(new ForbiddenException('Maximum 500 items per import.'));
+            }
+
             if (shop._count.products + results.length > limit) {
-              return reject(new ForbiddenException(`Import would exceed plan limit of ${limit} products.`));
+              return reject(
+                new ForbiddenException(
+                  `Import would exceed plan limit of ${limit} products. You currently have ${shop._count.products}.`,
+                ),
+              );
             }
 
             // 2. Process each row
             for (const [index, row] of results.entries()) {
               try {
-                // strict validation
-                if (!row.name || !row.price || !row.stock) {
-                  throw new Error('Missing required fields (name, price, stock)');
+                // validation
+                if (!row.name || !row.price) {
+                  throw new Error(`Row ${index + 1}: Missing name or price`);
                 }
 
-                const productDto: CreateProductDto = {
-                  name: row.name,
-                  price: parseFloat(row.price),
-                  stock: parseInt(row.stock),
-                  description: row.description,
-                  sku: row.sku || `PROD-${Date.now()}-${index}`,
-                  category: row.category,
-                  imageUrl: row.imageUrl,
-                  unit: row.unit,
-                  isActive: row.isActive === 'true' || row.isActive === true,
-                  attributes: row.attributes ? JSON.parse(row.attributes) : {},
-                };
+                const price = parseFloat(row.price);
+                const stock = row.stock ? parseInt(row.stock) : 0;
 
-                // Check SKU if provided
+                if (isNaN(price)) throw new Error(`Row ${index + 1}: Invalid price`);
+
+                // Map type
+                let productType: 'PHYSICAL' | 'SERVICE' | 'DIGITAL' = 'PHYSICAL';
+                if (row.type?.toUpperCase() === 'SERVICE') productType = 'SERVICE';
+                if (row.type?.toUpperCase() === 'DIGITAL') productType = 'DIGITAL';
+
+                const sku = row.sku || `SKU-${Date.now().toString().slice(-6)}-${index + 1}`;
+
+                // Check SKU if provided in CSV
                 if (row.sku) {
                   const existing = await this.databaseService.product.findUnique({
-                    where: { shopId_sku: { shopId, sku: row.sku } }
+                    where: { shopId_sku: { shopId, sku: row.sku } },
                   });
-                  if (existing) throw new Error(`SKU ${row.sku} already exists`);
+                  if (existing) {
+                    throw new Error(`SKU ${row.sku} already exists for this shop`);
+                  }
+                }
+
+                // Process attributes
+                let attributes = {};
+                try {
+                  if (row.attributes) {
+                    attributes = typeof row.attributes === 'string' ? JSON.parse(row.attributes) : row.attributes;
+                  }
+                } catch (e) {
+                  console.warn(`Failed to parse attributes for row ${index + 1}`, e);
                 }
 
                 const product = await this.databaseService.product.create({
                   data: {
-                    ...productDto,
+                    name: row.name,
+                    price,
+                    stock,
+                    description: row.description || '',
+                    sku,
+                    category: row.category || 'General',
+                    imageUrl: row.imageUrl || '',
+                    unit: row.unit || 'pcs',
+                    isActive: row.isActive?.toLowerCase() !== 'false',
+                    type: productType,
+                    attributes: attributes,
                     shop: { connect: { id: shopId } },
                   },
                 });
                 createdProducts.push(product);
               } catch (error) {
-                console.error(`Import failed for row ${index + 1}:`, error.message, row);
-                errors.push({ row: index + 1, error: error.message, data: row });
+                console.error(`Import failed for row ${index + 1}:`, error.message);
+                errors.push({
+                  row: index + 1,
+                  name: row.name || 'Unknown',
+                  error: error.message,
+                  data: row,
+                });
               }
             }
 
             resolve({
               success: true,
+              total: results.length,
               imported: createdProducts.length,
               failed: errors.length,
               errors: errors,
             });
-
           } catch (error) {
             reject(error);
           }
@@ -244,11 +329,15 @@ export class ProductService {
     });
   }
 
-  getSampleCsv(): string {
+  getSampleCsv(type?: string): string {
+    const isDigital = type?.toUpperCase() === 'DIGITAL';
+    const isService = type?.toUpperCase() === 'SERVICE';
+
     const headers = [
       'name',
       'price',
       'stock',
+      'type',
       'description',
       'sku',
       'category',
@@ -257,18 +346,23 @@ export class ProductService {
       'isActive',
       'attributes',
     ];
+
     const sampleRow = [
-      'Sample Product',
-      '19.99',
-      '100',
-      'A great sample product',
-      'SKU-123',
-      'Electronics',
+      isDigital ? 'UI Kit Pro' : isService ? 'Custom Logo Design' : 'Sample Product',
+      isDigital ? '49.00' : isService ? '199.00' : '19.99',
+      isDigital || isService ? '9999' : '100',
+      isDigital ? 'DIGITAL' : isService ? 'SERVICE' : 'PHYSICAL',
+      isDigital ? 'Premium UI kit for Figma' : isService ? 'Professional identity design' : 'A great sample product',
+      isDigital ? 'DIG-001' : isService ? 'SRV-001' : 'SKU-123',
+      isDigital ? 'Design' : isService ? 'Graphic Design' : 'Electronics',
       'https://example.com/image.jpg',
-      'pcs',
+      isDigital ? 'download' : isService ? 'project' : 'pcs',
       'true',
-      '"{""Color"": ""Red"", ""Size"": ""M""}"',
+      isDigital
+        ? '"{""Format"": ""Figma"", ""Size"": ""120MB"", ""Link"": ""https://storage.me/uikit""}"'
+        : '"{""Color"": ""Red"", ""Size"": ""M""}"',
     ];
+
     return headers.join(',') + '\n' + sampleRow.join(',');
   }
 }

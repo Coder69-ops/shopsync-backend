@@ -1,0 +1,11 @@
+Environment variables loaded from .env
+Prisma schema loaded from prisma\schema.prisma
+Datasource "db": PostgreSQL database "shopsync", schema "public" at "localhost:5432"
+
+
+ΓÜá∩╕Å  Warnings for the current datasource:
+
+  ΓÇó A unique constraint covering the columns `[shopId,platform,externalId]` on the table `Product` will be added. If there are existing duplicate values, this will fail.
+
+[?25l[2K[1G[36m?[39m [1mAre you sure you want to create and apply this migration?[22m [90m┬╗[39m [90m(y/N)[39m[2K[1G[2K[1G[32mΓêÜ[39m [1mAre you sure you want to create and apply this migration?[22m [90m...[39m no
+[?25hMigration cancelled.

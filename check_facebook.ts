@@ -5,7 +5,8 @@ const prisma = new PrismaClient();
 const pageId = '712736731918802';
 
 async function main() {
-    const shop = await prisma.shop.findFirst({ where: { pageId } });
+    // This is a test script, we will just find the first shop since pageId doesn't exist
+    const shop = await prisma.shop.findFirst();
     if (!shop) {
         console.log('❌ Shop not found');
         return;

@@ -2,16 +2,24 @@
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
 generator client {
-  provider      = "prisma-client-js"
-  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+  binaryTargets   = ["native", "linux-musl-openssl-3.0.x"]
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [vector]
 }
 
 // Enums for type safety
+enum PlatformType {
+  MANUAL
+  WOOCOMMERCE
+  SHOPIFY
+}
+
 enum Sender {
   USER
   BOT
@@ -24,15 +32,17 @@ enum MsgType {
 }
 
 enum OrderStatus {
+  PENDING // AI-extracted, awaiting merchant review
   DRAFT
   CONFIRMED
   SHIPPED
   DELIVERED
+  RETURNED // Courier returned the parcel
   CANCELLED
 }
 
 enum UserRole {
-  ADMIN      // Shop Owner
+  ADMIN // Shop Owner
   SUPERADMIN // Platform Owner (You)
 }
 
@@ -40,77 +50,171 @@ enum SubscriptionPlan {
   FREE
   BASIC
   PRO
+  PRO_TRIAL
+}
+
+enum Platform {
+  FACEBOOK
+  INSTAGRAM
+  WHATSAPP
+  WEB
+}
+
+enum MessageStatus {
+  PENDING
+  SENT
+  DELIVERED
+  READ
+  FAILED
 }
 
 model User {
-  id        String   @id @default(uuid())
-  email     String   @unique
-  password  String   // Hashed
-  role      UserRole     @default(ADMIN)
-  shopId    String?  // Null for Superadmin
-  shop      Shop?    @relation(fields: [shopId], references: [id])
-  createdAt DateTime @default(now())
+  id         String   @id @default(uuid())
+  email      String   @unique
+  password   String // Hashed
+  profilePic String?
+  role       UserRole @default(ADMIN)
+  shopId     String? // Null for Superadmin
+  shop       Shop?    @relation(fields: [shopId], references: [id])
+  createdAt  DateTime @default(now())
 
   // Subscription & Onboarding
-  trialEndsAt       DateTime? // Nullable initially, set on complete signup
-  subscriptionTier  SubscriptionPlan     @default(FREE)
-  isActive          Boolean  @default(true)
-  onboardingCompleted Boolean @default(false)
+  trialEndsAt         DateTime? // Nullable initially, set on complete signup
+  isActive            Boolean        @default(true)
+  onboardingCompleted Boolean        @default(false)
+  hasSeenTour         Boolean        @default(false)
+  facebookId          String?        @unique // Facebook SSO ID
+  notifications       Notification[]
+
+  // Preferences
+  themePreference    String  @default("dark") // "light", "dark", "system"
+  languagePreference String  @default("en") // "en", "bn"
+  emailNotifications Boolean @default(true)
+
+  // Email Verification
+  isEmailVerified          Boolean   @default(false)
+  verificationToken        String?
+  verificationTokenExpires DateTime?
 }
 
 model Shop {
-  id          String   @id @default(uuid())
+  id          String           @id @default(uuid())
   name        String
-  email       String   @unique
+  email       String           @unique
   ownerName   String?
-  accessToken String?  // Facebook Page Access Token
-  pageId      String?  // Facebook Page ID
-  plan        SubscriptionPlan     @default(FREE)
-  
+  accessToken String? // Facebook Page Access Token
+  platformIds Json? // { "facebook": "123", "whatsapp": "456" }
+  plan        SubscriptionPlan @default(FREE)
+
   // Dynamic Configuration
-  currencySymbol String @default("$")
-  currencyCode   String @default("USD")
+  currencySymbol String  @default("$")
+  currencyCode   String  @default("USD")
   taxRate        Decimal @default(0.0)
-  timezone       String @default("UTC")
-  dateFormat     String @default("dd/MM/yyyy")
-  
+  timezone       String  @default("UTC")
+  dateFormat     String  @default("dd/MM/yyyy")
+
   // Branding
-  logoUrl        String?
-  brandColor     String?  @default("#6366F1") // Default Indigo
-  
+  logoUrl    String?
+  brandColor String? @default("#6366F1") // Default Indigo
+
   // Business Details (for Invoice)
-  address        String?
-  phone          String?  // Public usage
-  emailSupport   String?  // Public usage
-  website        String?
-  
+  address      String?
+  phone        String? // Public usage
+  emailSupport String? // Public usage
+  website      String?
+
   // Legal
-  vatNumber      String?
-  termsUrl       String?
-  privacyUrl     String?
-  
+  vatNumber  String?
+  termsUrl   String?
+  privacyUrl String?
+
   // Socials
-  socialLinks    Json?    // { "facebook": "", "instagram": "", "youtube": "" }
-  
+  socialLinks Json? // { "facebook": "", "instagram": "", "youtube": "" }
+
+  // Courier Integration (per-shop credentials)
+  courierProvider  String? // e.g. 'STEADFAST', 'PATHAO'
+  courierApiKey    String? // Encrypted at rest in production
+  courierSecretKey String?
+
+  // RedX Courier Credentials
+  redxToken   String? // Bearer token from RedX dashboard
+  redxStoreId String? // Optional: RedX pickup store ID
+
   // AI Settings
-  deliveryCharge Decimal?
-  minOrderValue  Decimal?
+  deliveryCharge       Decimal?
+  minOrderValue        Decimal?
   confirmationTemplate String? // Template for order confirmation msg
-  isActive       Boolean  @default(true)
-  
-  aiConfig       Json?    // { "tone": "Friendly", "useEmojis": true, "greeting": "..." }
-  
-  createdAt      DateTime @default(now())
-  
-  users          User[]
-  products       Product[]
-  orders         Order[]
-  conversations  Conversation[]
-  usageLogs      UsageLog[]
-  customers      Customer[]
-  campaigns      Campaign[]
-  posts          Post[]
-  comments       Comment[]
+  isActive             Boolean  @default(true)
+
+  aiConfig Json? // { "tone": "Friendly", "useEmojis": true, "greeting": "..." }
+
+  createdAt DateTime @default(now())
+
+  users         User[]
+  products      Product[]
+  orders        Order[]
+  conversations Conversation[]
+  usageLogs     UsageLog[]
+  customers     Customer[]
+  campaigns     Campaign[]
+  posts         Post[]
+  comments      Comment[]
+  payments      Payment[]
+
+  subscriptionEndsAt DateTime? // For Manual Subscriptions (Pro)
+  trialEndsAt        DateTime? // For Trial Expiry
+  tokenUsages        TokenUsage[]
+
+  knowledgeBases KnowledgeBase[]
+
+  // SaaS Billing Gateways
+  merchantId         String? // LemonSqueezy/Paddle Merchant/Customer ID
+  subscriptionId     String? // LemonSqueezy/Paddle Subscription ID
+  subscriptionStatus String? // active, past_due, canceled
+
+  // Superadmin Overrides (Null means fallback to PlanConfig)
+  customMessageLimit Int?
+  customOrderLimit   Int?
+
+  // Feature Overrides (Useful for custom Enterprise clients)
+  customFeatures Json? // e.g. { "canUseVoiceAI": true }
+}
+
+// 1. The Dynamic Plan Configuration Model (Managed by Superadmin)
+model PlanConfig {
+  id   String           @id @default(uuid())
+  plan SubscriptionPlan @unique // FREE, BASIC, PRO
+
+  // Limits (-1 means unlimited)
+  monthlyPrice Float @default(0)
+  messageLimit Int   @default(50)
+  orderLimit   Int   @default(100)
+
+  // Feature Permissions (Boolean Flags)
+  canUseVoiceAI   Boolean @default(false)
+  canUseCourier   Boolean @default(false)
+  removeWatermark Boolean @default(false)
+
+  updatedAt DateTime @updatedAt
+}
+
+model Payment {
+  id              String        @id @default(uuid())
+  shopId          String
+  shop            Shop          @relation(fields: [shopId], references: [id])
+  amount          Decimal
+  method          String // bKash, Nagad, Rocket
+  senderNumber    String
+  transactionId   String        @unique
+  status          PaymentStatus @default(PENDING)
+  rejectionReason String?
+  createdAt       DateTime      @default(now())
+}
+
+enum PaymentStatus {
+  PENDING
+  APPROVED
+  REJECTED
 }
 
 enum CampaignStatus {
@@ -122,112 +226,176 @@ enum CampaignStatus {
 }
 
 model Campaign {
-  id          String         @id @default(uuid())
-  shopId      String
-  shop        Shop           @relation(fields: [shopId], references: [id])
-  name        String
-  message     String
-  status      CampaignStatus @default(DRAFT)
-  audience    String?        // Filter criteria: "ALL", "VIP", "RECENT_24H"
-  
+  id       String         @id @default(uuid())
+  shopId   String
+  shop     Shop           @relation(fields: [shopId], references: [id])
+  name     String
+  message  String
+  status   CampaignStatus @default(DRAFT)
+  audience String? // Filter criteria: "ALL", "VIP", "RECENT_24H"
+
   scheduledAt DateTime?
   sentAt      DateTime?
-  
-  stats       Json?          // { "sent": 100, "failed": 2 }
-  
-  createdAt   DateTime       @default(now())
-  updatedAt   DateTime       @updatedAt
+
+  stats Json? // { "sent": 100, "failed": 2 }
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model Customer {
-  id        String   @id @default(uuid())
-  psid      String   // Page Scoped ID from Facebook
-  name      String?
+  id         String   @id @default(uuid())
+  externalId String
+  platform   Platform @default(FACEBOOK)
+  name       String?
   profilePic String?
-  email     String?
-  phone     String?
-  
-  tags      String[] // e.g. ["VIP", "Refunded"]
-  notes     String?  
-  
-  shopId    String
-  shop      Shop     @relation(fields: [shopId], references: [id])
-  
-  orders    Order[]
-  
+  email      String?
+  phone      String?
+
+  tags  String[] // e.g. ["VIP", "Refunded"]
+  notes String?
+
+  shopId String
+  shop   Shop   @relation(fields: [shopId], references: [id])
+
+  orders Order[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([shopId, psid]) // A customer is unique to a shop by their PSID
+  @@unique([shopId, externalId, platform]) // Unique per platform
+}
+
+enum ProductType {
+  PHYSICAL
+  SERVICE
+  DIGITAL
 }
 
 model Product {
-  id          String   @id @default(uuid())
+  id          String  @id @default(uuid())
   shopId      String
-  shop        Shop     @relation(fields: [shopId], references: [id])
+  shop        Shop    @relation(fields: [shopId], references: [id])
   name        String
   price       Decimal
-  stock       Int      @default(0)
-  description String?  // Used for RAG context
-  
+  stock       Int     @default(0)
+  description String? // Used for RAG context
+
+  // Integration Fields
+  platform    PlatformType                @default(MANUAL)
+  externalId  String?
+  externalUrl String?
+  embedding   Unsupported("vector(768)")? // 768 is common for Gemini/OpenAI standard embeddings
+
   // New Fields
-  sku         String?  
-  category    String?  @default("General")
-  imageUrl    String?
-  unit        String?  @default("pcs")
-  isActive    Boolean  @default(true)
-  attributes  Json?    // { "color": "red", "size": "XL" }
-  
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  sku        String?
+  category   String?     @default("General")
+  imageUrl   String?
+  unit       String?     @default("pcs")
+  isActive   Boolean     @default(true)
+  attributes Json? // { "color": "red", "size": "XL" }
+  type       ProductType @default(PHYSICAL)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  orderItems OrderItem[]
 
   @@unique([shopId, sku]) // SKU must be unique per shop
+  @@unique([shopId, platform, externalId])
+  @@index([shopId])
+  @@index([name])
 }
 
 model Conversation {
-  id             String   @id @default(uuid())
-  shopId         String
-  shop           Shop     @relation(fields: [shopId], references: [id])
-  psid           String   // User's Page Scoped ID (Facebook User ID)
-  status         String   @default("ACTIVE") // ACTIVE, PAUSED
-  lastMessage    String?
-  updatedAt      DateTime @updatedAt
-  
-  messages       Message[]
-  
+  id          String   @id @default(uuid())
+  shopId      String
+  shop        Shop     @relation(fields: [shopId], references: [id])
+  psid        String // User's Page Scoped ID (Facebook User ID)
+  status      String   @default("ACTIVE") // ACTIVE, PAUSED
+  lastMessage String?
+  updatedAt   DateTime @updatedAt
+
+  messages Message[]
+
   @@unique([shopId, psid])
 }
 
 model Message {
-  id             String   @id @default(uuid())
+  id             String       @id @default(uuid())
   conversationId String
   conversation   Conversation @relation(fields: [conversationId], references: [id])
-  sender         Sender   
-  content        String   // Text content or Audio URL
-  type           MsgType  @default(TEXT)
-  createdAt      DateTime @default(now())
+  sender         Sender
+  content        String // Text content or Audio URL
+  type           MsgType      @default(TEXT)
+
+  externalMsgId String?       @unique // ID returned by Facebook/WhatsApp
+  status        MessageStatus @default(PENDING)
+  errorMessage  String? // If failed, why?
+
+  createdAt DateTime @default(now())
+
+  @@index([conversationId, createdAt]) // To load chat history fast
+}
+
+model OrderItem {
+  id      String @id @default(uuid())
+  orderId String
+  order   Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  productId String? // Optional because a product might be deleted later
+  product   Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  name      String // Snapshot of product name at time of order
+  quantity  Int     @default(1)
+  unitPrice Decimal
+  total     Decimal
 }
 
 model Order {
-  id              String      @id @default(uuid())
-  shopId          String
-  shop            Shop        @relation(fields: [shopId], references: [id])
-  
-  customerId      String?
-  customer        Customer?   @relation(fields: [customerId], references: [id])
-  
+  id     String @id @default(uuid())
+  shopId String
+  shop   Shop   @relation(fields: [shopId], references: [id])
+
+  customerId String?
+  customer   Customer? @relation(fields: [customerId], references: [id])
+
   customerName    String?
   customerPhone   String?
   customerAddress String?
-  items           String?     // Flattened items list for quick view
-  totalPrice      Decimal?
-  status          OrderStatus @default(DRAFT)
-  rawExtract      Json?       // The JSON extracted by AI
-  trackingId      String?     // Courier Tracking ID (e.g. SFS-1234)
-  courierName     String?     // e.g. "Steadfast", "Pathao"
-  shipmentStatus  String?     // e.g. "PENDING", "PICKED_UP", "DELIVERED"
-  createdAt       DateTime    @default(now())
-  source          OrderSource @default(MANUAL)
+
+  // Service Specific Fields
+  appointmentDate DateTime?
+  serviceNotes    String?
+
+  orderItems  OrderItem[]
+  subTotal    Decimal? // Product total before delivery fee
+  deliveryFee Decimal? // Delivery fee applied
+  totalPrice  Decimal? // Grand total (subTotal + deliveryFee)
+
+  // RedX-specific logistics
+  deliveryAreaId       Int? // RedX area ID selected by merchant
+  deliveryAreaName     String? // Human-readable area name (e.g. "Dhaka")
+  cashCollectionAmount Decimal? // Cash on delivery amount
+  parcelWeight         Int      @default(500) // Weight in grams
+
+  status            OrderStatus @default(DRAFT)
+  extractedFromChat Boolean     @default(false) // true when source is AI/CHAT
+  rawExtract        Json? // Raw JSON extracted by AI
+
+  // Courier tracking
+  invoiceNumber        String? @unique // ShopSync invoice (e.g. INV-XXXX)
+  trackingId           String? @unique // Courier tracking ID (RedX / Steadfast)
+  courierConsignmentId String? // Alias for non-unique consignment IDs
+  courierName          String? // e.g. "RedX", "Steadfast", "Pathao"
+  shipmentStatus       String? // Courier-reported status
+
+  source    OrderSource @default(MANUAL)
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @default(now()) @updatedAt
+
+  @@index([shopId, status]) // Quickly filter pending orders for a shop
+  @@index([createdAt]) // For analytics dashboards
 }
 
 enum OrderSource {
@@ -237,35 +405,193 @@ enum OrderSource {
 }
 
 model Post {
-  id          String    @id @default(uuid())
-  facebookId  String    @unique // Facebook Post ID
-  content     String?   
-  shopId      String
-  shop        Shop      @relation(fields: [shopId], references: [id])
-  comments    Comment[]
-  createdAt   DateTime  @default(now())
+  id         String    @id @default(uuid())
+  facebookId String    @unique // Facebook Post ID
+  content    String?
+  shopId     String
+  shop       Shop      @relation(fields: [shopId], references: [id])
+  comments   Comment[]
+  createdAt  DateTime  @default(now())
 }
 
 model Comment {
-  id              String   @id @default(uuid())
-  facebookId      String   @unique // Facebook Comment ID
-  postId          String
-  post            Post     @relation(fields: [postId], references: [id])
-  shopId          String
-  shop            Shop     @relation(fields: [shopId], references: [id])
-  senderName      String?
-  senderPsid      String?
-  content         String   // The customer's comment
-  aiReply         String?  // The automated reply generated by AI
-  status          String   @default("PENDING") // PENDING, REPLIED, FAILED
-  createdAt       DateTime @default(now())
+  id         String   @id @default(uuid())
+  facebookId String   @unique // Facebook Comment ID
+  postId     String
+  post       Post     @relation(fields: [postId], references: [id])
+  shopId     String
+  shop       Shop     @relation(fields: [shopId], references: [id])
+  senderName String?
+  senderPsid String?
+  content    String // The customer's comment
+  aiReply    String? // The automated reply generated by AI
+  status     String   @default("PENDING") // PENDING, REPLIED, FAILED
+  createdAt  DateTime @default(now())
 }
 
 model UsageLog {
   id        String   @id @default(uuid())
   shopId    String
   shop      Shop     @relation(fields: [shopId], references: [id])
-  type      String   // MESSAGE_AI, ORDER_EXTRACTED, VOICE_WHISPER
+  type      String // MESSAGE_AI, ORDER_EXTRACTED, VOICE_WHISPER
   quantity  Int      @default(1)
   createdAt DateTime @default(now())
+}
+
+model TokenUsage {
+  id        String   @id @default(cuid())
+  shopId    String
+  shop      Shop     @relation(fields: [shopId], references: [id])
+  type      String // MESSAGE_AI, ORDER_EXTRACTED, VOICE_WHISPER
+  quantity  Int      @default(1)
+  createdAt DateTime @default(now())
+}
+
+model Broadcast {
+  id         String    @id @default(cuid())
+  title      String
+  message    String
+  type       String    @default("GLOBAL_ALERT") // GLOBAL_ALERT, PROMO, MAINTENANCE
+  targetPlan String? // null = all, or "FREE", "PRO"
+  isActive   Boolean   @default(true)
+  expiresAt  DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  adminId   String
+  action    String // e.g., "IMPERSONATE", "CHANGE_PLAN", "SUSPEND_SHOP"
+  targetId  String? // Shop ID or User ID
+  details   Json? // Old value vs New value, Reason
+  createdAt DateTime @default(now())
+}
+
+model SystemConfig {
+  id String @id @default("global_config")
+
+  // 1. AI Controls
+  activeAiModel String  @default("llama-3.3-70b-versatile")
+  aiProvider    String  @default("GROQ") // GROQ, OPENROUTER, GOOGLE, OPENAI
+  aiApiKey      String? // Nullable, if null use env var
+
+  // Secondary / Backup AI Controls
+  backupAiModel    String?
+  backupAiProvider String?
+  backupAiApiKey   String?
+
+  globalPrompt String @db.Text
+
+  // 2. Business Logic
+  trialDays       Int     @default(14)
+  monthlyPrice    Float   @default(3000)
+  maintenanceMode Boolean @default(false)
+
+  // 3. Global Broadcast
+  broadcastMessage String?
+
+  // 4. Notification Controls
+  enableMerchantEmails   Boolean @default(true)
+  enableAdminAlerts      Boolean @default(true)
+  emailSenderName        String  @default("ShopSync")
+  emailSupportContact    String  @default("support@komolina.store")
+  lowStockThreshold      Int     @default(5)
+
+  // System Email Provider
+  emailProvider String? @default("RESEND") // RESEND, SMTP
+  smtpHost      String?
+  smtpPort      Int?
+  smtpUser      String?
+  smtpPassword  String?
+  smtpFrom      String?
+
+  globalEmailTemplate    String? @db.Text
+
+  welcomeEmailSubject    String  @default("Welcome to ShopSync! 🚀")
+  welcomeEmailBody       String? @db.Text
+  newOrderEmailSubject   String  @default("New Order Received! 🛍️")
+  newOrderEmailBody      String? @db.Text
+  lowStockEmailSubject   String  @default("⚠️ Low Stock Alert")
+  lowStockEmailBody      String? @db.Text
+  adminAlertEmailSubject String  @default("New Shop Registration 🏢")
+  adminAlertEmailBody    String? @db.Text
+
+  // 5. Payment Methods (Legacy - Migrated to PaymentMethod model)
+  // bkashNumber and nagadNumber removed in favor of dynamic PaymentMethod model
+
+  updatedAt DateTime @updatedAt
+}
+
+model PaymentMethod {
+  id          String  @id @default(uuid())
+  name        String // e.g., "bKash", "City Bank"
+  type        String // "MOBILE_BANKING", "BANK", "OTHER"
+  identifiers Json? // { "Account Number": "017...", "Bank Name": "City Bank" }
+  instruction String? // "Send money using Send Money option..."
+
+  isActive  Boolean @default(true)
+  isDefault Boolean @default(false)
+
+  logo String? // "bkash", "nagad", "rocket", "bank", "visa", "mastercard"
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  title     String
+  body      String
+  link      String? // Actionable route (e.g. '/billing')
+  isRead    Boolean  @default(false)
+  type      String // 'PAYMENT_REJECTED', 'TRIAL_EXPIRING', 'ORDER_CONFIRMED'
+  createdAt DateTime @default(now())
+}
+
+model BlogCategory {
+  id        String     @id @default(uuid())
+  slug      String     @unique
+  name      String
+  color     String     @default("bg-blue-50 text-blue-600")
+  posts     BlogPost[]
+  createdAt DateTime   @default(now())
+}
+
+model BlogPost {
+  id          String  @id @default(uuid())
+  slug        String  @unique
+  title       String
+  excerpt     String  @db.Text
+  content     String  @db.Text
+  coverImage  String?
+  readTime    Int     @default(5)
+  isFeatured  Boolean @default(false)
+  isPublished Boolean @default(false)
+  views       Int     @default(0)
+
+  categoryId String
+  category   BlogCategory @relation(fields: [categoryId], references: [id])
+
+  authorName String @default("ShopSync Team")
+
+  metaTitle       String?
+  metaDescription String?
+  metaKeywords    String?
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  publishedAt DateTime? // Added for precise JSON-LD SEO tagging
+}
+
+model KnowledgeBase {
+  id     String @id @default(uuid())
+  shopId String
+  shop   Shop   @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  question String // e.g., "What is your return policy?"
+  answer   String  @db.Text
+  isActive Boolean @default(true)
 }

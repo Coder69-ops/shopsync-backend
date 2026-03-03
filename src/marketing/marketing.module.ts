@@ -6,8 +6,8 @@ import { FacebookModule } from '../facebook/facebook.module';
 import { CustomerModule } from '../customer/customer.module';
 
 @Module({
-    imports: [DatabaseModule, FacebookModule, CustomerModule],
-    controllers: [MarketingController],
-    providers: [MarketingService],
+  imports: [DatabaseModule, FacebookModule, CustomerModule],
+  controllers: [MarketingController],
+  providers: [MarketingService],
 })
-export class MarketingModule { }
+export class MarketingModule {}

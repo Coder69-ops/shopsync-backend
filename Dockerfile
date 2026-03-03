@@ -1,5 +1,5 @@
 # Build Stage
-FROM node:18-alpine AS builder
+FROM node:22-alpine AS builder
 
 WORKDIR /app
 
@@ -11,14 +11,14 @@ RUN npm install
 
 COPY . .
 
-# Force cache invalidation to ensure Prisma schema changes are picked up
-RUN echo "Cache Bust 2026-02-10-v3"
+# Force cache invalidation to ensure Prisma schema and migrations are picked up
+RUN echo "Cache Bust 2026-02-17-v4"
 
 RUN npx prisma generate
 RUN npm run build
 
 # Production Stage
-FROM node:18-alpine
+FROM node:22-alpine
 
 # Install OpenSSL (v3) so Prisma can detect it
 RUN apk add --no-cache openssl

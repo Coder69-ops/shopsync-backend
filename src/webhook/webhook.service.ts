@@ -11,7 +11,7 @@ export class WebhookService {
   constructor(
     @InjectQueue('chat-queue') private chatQueue: Queue,
     private readonly db: DatabaseService,
-  ) { }
+  ) {}
 
   async processWebhookEvent(body: any) {
     // 1. Extract Shop ID (assuming it's in the body or we look it up via Page ID)
@@ -23,8 +23,13 @@ export class WebhookService {
     }
 
     const shop = await this.db.shop.findFirst({
-      where: { pageId: pageId },
-      include: { users: true } // Get owner to check trial
+      where: {
+        platformIds: {
+          path: ['facebook'],
+          equals: pageId,
+        },
+      },
+      include: { users: true }, // Get owner to check trial
     });
 
     if (!shop) {
@@ -34,14 +39,21 @@ export class WebhookService {
     }
 
     // 2. Check Subscription "Hard Stop"
-    const owner = shop.users.find((u: any) => u.role === 'ADMIN' || u.role === 'SUPERADMIN'); // simplistic check
+    const owner = shop.users.find(
+      (u: any) => u.role === 'ADMIN' || u.role === 'SUPERADMIN',
+    ); // simplistic check
     if (owner) {
       // Superadmin bypass
       if (owner.role === 'SUPERADMIN') {
         // allow
-      } else if (owner.subscriptionTier === SubscriptionPlan.FREE) {
+      } else if (
+        shop.plan === SubscriptionPlan.FREE ||
+        shop.plan === SubscriptionPlan.PRO_TRIAL
+      ) {
         if (!owner.trialEndsAt || new Date() > new Date(owner.trialEndsAt)) {
-          this.logger.warn(`[HARD STOP] Shop ${shop.name} (User ${owner.id}) trial expired. Dropping message.`);
+          this.logger.warn(
+            `[HARD STOP] Shop ${shop.name} (User ${owner.id}) trial expired. Dropping message.`,
+          );
           return; // DROP THE EVENT
         }
       }
