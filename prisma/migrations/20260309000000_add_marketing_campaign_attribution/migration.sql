@@ -1,4 +1,8 @@
 -- AlterTable
+ALTER TABLE "Campaign" ADD COLUMN "revenueGenerated" DECIMAL(65,30) NOT NULL DEFAULT 0;
+ALTER TABLE "Campaign" ADD COLUMN "ordersCount" INTEGER NOT NULL DEFAULT 0;
+
+-- AlterTable
 ALTER TABLE "Order" ADD COLUMN "marketingCampaignId" TEXT;
 
 -- AddForeignKey
