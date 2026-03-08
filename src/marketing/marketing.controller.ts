@@ -16,13 +16,20 @@ import { UserRole } from '@prisma/client';
 @Controller('marketing')
 @UseGuards(AuthGuard('jwt'), RolesGuard)
 export class MarketingController {
-  constructor(private readonly marketingService: MarketingService) {}
+  constructor(private readonly marketingService: MarketingService) { }
 
   @Post('campaign')
   @Roles(UserRole.ADMIN)
   async createCampaign(@Body() data: any, @Req() req: any) {
     const shopId = req.user.shopId;
     return this.marketingService.createCampaign(shopId, data);
+  }
+
+  @Post('generate-copy')
+  @Roles(UserRole.ADMIN)
+  async generateCopy(@Body() data: { prompt: string }, @Req() req: any) {
+    const shopId = req.user.shopId;
+    return this.marketingService.generateCopy(shopId, data.prompt);
   }
 
   @Post('campaign/:id/send')
@@ -37,5 +44,12 @@ export class MarketingController {
   async getCampaigns(@Req() req: any) {
     const shopId = req.user.shopId;
     return this.marketingService.getCampaigns(shopId);
+  }
+
+  @Get('campaign/:id')
+  @Roles(UserRole.ADMIN)
+  async getCampaign(@Param('id') id: string, @Req() req: any) {
+    const shopId = req.user.shopId;
+    return this.marketingService.getCampaign(id, shopId);
   }
 }

@@ -185,4 +185,19 @@ export class FacebookService {
       return false;
     }
   }
+
+  async getUserProfile(psid: string, pageAccessToken: string): Promise<{ name: string; profilePic: string } | null> {
+    try {
+      const url = `https://graph.facebook.com/v24.0/${psid}?fields=first_name,last_name,profile_pic&access_token=${pageAccessToken}`;
+      const response = await axios.get(url);
+
+      return {
+        name: `${response.data.first_name || ''} ${response.data.last_name || ''}`.trim() || 'Facebook User',
+        profilePic: response.data.profile_pic || '',
+      };
+    } catch (error) {
+      this.logger.error(`Failed to fetch user profile for psid: ${psid}`, error.response?.data || error.message);
+      return null;
+    }
+  }
 }

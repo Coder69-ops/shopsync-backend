@@ -5,6 +5,7 @@ import { DatabaseService } from '../database/database.service';
 import axios from 'axios';
 import { SystemConfigService } from '../superadmin/system-config.service';
 import { EmbeddingsService } from '../integration/embeddings.service';
+import { RedxService } from '../redx/redx.service';
 
 export interface ShopWithPrompt {
   id: string;
@@ -13,10 +14,12 @@ export interface ShopWithPrompt {
   aiConfig?: any;
   plan?: string;
   trialEndsAt?: Date | string | null;
+  redxToken?: string | null;
+  redxStoreId?: string | null;
 }
 
 export interface AiResponse {
-  intent: 'CREATE_ORDER' | 'GENERAL_QUERY' | 'CHECK_STATUS';
+  intent: 'CREATE_ORDER' | 'GENERAL_QUERY' | 'CHECK_STATUS' | 'CHECK_SHIPPING' | 'RETURN_ORDER';
   thought?: string;
   reply_message: string;
   data: {
@@ -27,6 +30,8 @@ export interface AiResponse {
     total_price?: number;
     total_amount?: number;
     order_id?: string | null;
+    return_reason?: string | null;
+    shipping_details?: any;
   };
   order_data?: {
     customer_name?: string | null;
@@ -37,7 +42,9 @@ export interface AiResponse {
     total_amount?: number;
     delivery_charge?: number;
     order_id?: string | null;
+    shipping_details?: any;
   };
+  shipping_details?: any;
   confirmation_message?: string;
 }
 
@@ -57,7 +64,8 @@ export class AiService {
     private productService: ProductService,
     private readonly db: DatabaseService,
     private readonly systemConfigService: SystemConfigService,
-    private readonly embeddingsService: EmbeddingsService
+    private readonly embeddingsService: EmbeddingsService,
+    private readonly redxService: RedxService
   ) { }
 
   private async sleep(ms: number): Promise<void> {
@@ -78,7 +86,7 @@ export class AiService {
         (error.response?.status === 429 || error.status === 429)
       ) {
         this.logger.warn(
-          `Rate limit hit (429). Retrying in ${delay / 1000}s... (${retries} retries left)`,
+          `Rate limit hit(429).Retrying in ${delay / 1000}s... (${retries} retries left)`,
         );
         await this.sleep(delay);
         return this.retryWithBackoff(fn, retries - 1, delay * factor, factor);
@@ -87,7 +95,7 @@ export class AiService {
     }
   }
 
-  private async callAi(
+  public async callAi(
     systemPrompt: string,
     history: { role: 'user' | 'assistant'; content: string }[],
     userMessage: string,
@@ -146,7 +154,7 @@ export class AiService {
       });
     } catch (error) {
       this.logger.error(
-        `[PRIMARY AI FAILURE] Provider ${provider} model ${activeModel} failed: ${error.message}`,
+        `[PRIMARY AI FAILURE] Provider ${provider} model ${activeModel} failed: ${error.message} `,
       );
 
       // Attempt Backup Provider if Configured
@@ -164,7 +172,7 @@ export class AiService {
           });
         } catch (backupError) {
           this.logger.error(
-            `[BACKUP AI FAILURE] Provider ${backupProvider} model ${backupModel} also failed: ${backupError.message}`,
+            `[BACKUP AI FAILURE] Provider ${backupProvider} model ${backupModel} also failed: ${backupError.message} `,
           );
           throw backupError; // Both failed
         }
@@ -202,7 +210,7 @@ export class AiService {
       },
       {
         headers: {
-          Authorization: `Bearer ${apiKey}`,
+          Authorization: `Bearer ${apiKey} `,
           'Content-Type': 'application/json',
           'HTTP-Referer': 'https://shopsync.it.com', // Required by OpenRouter
           'X-Title': 'ShopSync',
@@ -242,7 +250,7 @@ export class AiService {
       },
       {
         headers: {
-          Authorization: `Bearer ${apiKey}`,
+          Authorization: `Bearer ${apiKey} `,
           'Content-Type': 'application/json',
         },
       },
@@ -285,7 +293,7 @@ export class AiService {
     return jsonMode ? JSON.parse(contentText) : contentText;
   }
 
-  private async buildSystemPrompt(
+  public async buildSystemPrompt(
     shop: ShopWithPrompt,
     mode: 'chat' | 'comment' = 'chat',
     query?: string
@@ -392,6 +400,28 @@ export class AiService {
       prompt += `\n\n### ADDITIONAL SHOP KNOWLEDGE (Q&A)\n${qnaContext}`;
     }
 
+    // --- REDX LOGISTICS CAPABILITIES ---
+    const redxToken = shop.redxToken;
+    let logisticsInstructions = '';
+    if (redxToken) {
+      logisticsInstructions = `
+      ### REDX LOGISTICS ENABLED
+      You have access to real-time RedX shipping rates and area lookups.
+      - **Tool: CHECK_SHIPPING**
+        - Use this when: User asks for delivery charge/cost to a specific area OR you need to calculate total for an order but want exact RedX rates.
+        - Required Data: 'area_name' (e.g., "Dhanmondi"), 'parcel_weight' (optional, in grams, default: 500).
+        - How to trigger: Set 'intent' to 'CHECK_SHIPPING' and provide 'data.area_name' and 'data.parcel_weight' if known.
+      - **Tool: CHECK_STATUS**
+        - Use this when: User asks "Where is my order?", "Order update ki?", or provides an Order ID to track.
+        - Required Data: 'order_id' or 'invoice_number' if provided.
+        - How to trigger: Set 'intent' to 'CHECK_STATUS' and provide 'data.order_id'.
+      - **Tool: RETURN_ORDER**
+        - Use this when: User wants to return a delivered item or initiate reverse logistics.
+        - Required Data: 'order_id' (if known) and 'return_reason'.
+        - How to trigger: Set 'intent' to 'RETURN_ORDER' and provide 'data.order_id' and 'data.return_reason'.
+      - **Area Validation:** If a user provides an address, try to identify the 'area_name' for logistics calculation.`;
+    }
+
     // --- MODE SPECIFIC INSTRUCTIONS ---
 
     if (mode === 'comment') {
@@ -415,6 +445,7 @@ export class AiService {
       prompt += `
       ### MODE: INBOX CHAT & ORDER TAKING
       User is chatting privately. Your goal is to CLOSE THE SALE or BOOK THE SERVICE.
+      ${logisticsInstructions}
 
       ### FEW-SHOT EXAMPLES (Follow this style):
       
@@ -463,7 +494,7 @@ export class AiService {
 
       ### RESPONSE FORMAT (JSON ONLY, NO MARKDOWN BLOCK):
       {
-        "intent": "CREATE_ORDER" | "GENERAL_QUERY" | "CHECK_STATUS",
+        "intent": "CREATE_ORDER" | "GENERAL_QUERY" | "CHECK_STATUS" | "CHECK_SHIPPING" | "RETURN_ORDER",
         "thought": "Reasoning (e.g., User gave address but missing phone)",
         "reply_message": "The text to show the user",
         "data": {
@@ -474,7 +505,9 @@ export class AiService {
            "items": [{ "product_name": "string", "quantity": number }] or [],
            "total_price": number,
            "delivery_type": "inside" | "outside",
-           "order_id": "string or null"
+           "order_id": "string or null",
+           "return_reason": "string or null",
+           "area_name": "string or null"
         }
       }
       `;
@@ -483,36 +516,39 @@ export class AiService {
     return prompt;
   }
 
+  private checkAndHandleTrialExpiry(shop: ShopWithPrompt): boolean {
+    const now = new Date();
+    const isTrialExpired =
+      shop.plan === 'PRO_TRIAL' &&
+      shop.trialEndsAt &&
+      now > new Date(shop.trialEndsAt);
+
+    if (shop.plan === 'FREE' || isTrialExpired) {
+      if (isTrialExpired) {
+        this.logger.warn(
+          `[LAZY DOWNGRADE] Shop ${shop.id} trial expired. Downgrading to FREE.`,
+        );
+        this.db.shop
+          .update({
+            where: { id: shop.id },
+            data: { plan: 'FREE' },
+          })
+          .catch((e) =>
+            this.logger.error('Failed to auto-downgrade shop', e),
+          );
+      }
+      return true;
+    }
+    return false;
+  }
+
   async processComment(
     commentText: string,
     postContext: string,
     shop: ShopWithPrompt,
   ): Promise<CommentResponse> {
     try {
-      // AI Guard Level 2
-      // Lazy Expiry Check
-      const now = new Date();
-      const isTrialExpired =
-        shop.plan === 'PRO_TRIAL' &&
-        shop.trialEndsAt &&
-        now > new Date(shop.trialEndsAt);
-
-      if (shop.plan === 'FREE' || isTrialExpired) {
-        // Lazy Auto-Downgrade (Fire and Forget)
-        if (isTrialExpired) {
-          this.logger.warn(
-            `[LAZY DOWNGRADE] Shop ${shop.id} trial expired (via Comment). Downgrading to FREE.`,
-          );
-          this.db.shop
-            .update({
-              where: { id: shop.id },
-              data: { plan: 'FREE' },
-            })
-            .catch((e) =>
-              this.logger.error('Failed to auto-downgrade shop', e),
-            );
-        }
-
+      if (this.checkAndHandleTrialExpiry(shop)) {
         return {
           thought: 'Trial Expired',
           publicReply: 'Please contact us via Inbox.',
@@ -550,45 +586,7 @@ export class AiService {
     history: { role: 'user' | 'assistant'; content: string }[] = [],
   ): Promise<AiResponse> {
     try {
-      if (process.env.LOAD_TEST_MODE === 'true') {
-        this.logger.log(`[LOAD TEST MODE] Bypassing AI processing for user Message: ${userMessage.substring(0, 30)}`);
-        // Add a tiny artificial delay to simulate processing but significantly faster than real AI
-        await this.sleep(100);
-        return {
-          intent: 'GENERAL_QUERY',
-          reply_message: 'This is a mock AI response for load testing. Fast and cheap!',
-          data: {}
-        };
-      }
-
-      // AI Guard Level 2
-      // Lazy Expiry Check
-      const now = new Date();
-      const isTrialExpired =
-        shop.plan === 'PRO_TRIAL' &&
-        shop.trialEndsAt &&
-        now > new Date(shop.trialEndsAt);
-
-      if (shop.plan === 'FREE' || isTrialExpired) {
-        // Lazy Auto-Downgrade
-        if (isTrialExpired) {
-          this.logger.warn(
-            `[LAZY DOWNGRADE] Shop ${shop.id} trial expired. Downgrading to FREE.`,
-          );
-          // Fire and forget update
-          this.db.shop
-            .update({
-              where: { id: shop.id },
-              data: { plan: 'FREE' },
-            })
-            .catch((e) =>
-              this.logger.error('Failed to auto-downgrade shop', e),
-            );
-
-          // Since we don't have the user ID here easily without querying, we settle for Shop plan update or rely on valid Shop object passing.
-          // Ideally, the caller should refresh the shop object next time.
-        }
-
+      if (this.checkAndHandleTrialExpiry(shop)) {
         return {
           intent: 'GENERAL_QUERY',
           reply_message:
@@ -625,6 +623,14 @@ export class AiService {
         };
       }
 
+      if (
+        userMessage.toLowerCase().includes('return') ||
+        userMessage.toLowerCase().includes('ferot') ||
+        userMessage.toLowerCase().includes('refund')
+      ) {
+        // Let the AI handle it, but we can give a hint if we wanted.
+      }
+
       // 2. Generate AI Response via dynamic call
       const systemPrompt = await this.buildSystemPrompt(shop, 'chat', userMessage);
 
@@ -635,6 +641,20 @@ export class AiService {
         undefined,
         true,
       );
+
+      // Handle Logistics Tool-use (Intent Loop)
+      if (aiResponse.intent === 'CHECK_SHIPPING' && shop.redxToken) {
+        return await this.processLogisticsIntent(aiResponse, shop, userMessage, history);
+      }
+
+      if (aiResponse.intent === 'CHECK_STATUS') {
+        return await this.processTrackingIntent(aiResponse, shop, userMessage, history);
+      }
+
+      if (aiResponse.intent === 'RETURN_ORDER') {
+        return await this.processReturnIntent(aiResponse, shop, userMessage, history);
+      }
+
       return aiResponse;
     } catch (error) {
       this.logger.error(
@@ -648,6 +668,213 @@ export class AiService {
           'Sorry, I am having trouble understanding right now. Can you please repeat?',
         data: {},
       };
+    }
+  }
+
+  private async processLogisticsIntent(
+    aiResponse: any,
+    shop: ShopWithPrompt,
+    userMessage: string,
+    history: any[],
+  ): Promise<any> {
+    const redxToken = shop.redxToken;
+    if (!redxToken) return aiResponse;
+
+    const areaName = aiResponse.data?.area_name;
+    if (!areaName) return aiResponse;
+
+    try {
+      this.logger.log(`Performing RedX area lookup for: ${areaName}`);
+      const areas = await this.redxService.getAreas(redxToken, areaName);
+
+      if (areas && areas.length > 0) {
+        const bestArea = areas[0];
+        const weight = Number(aiResponse.data?.parcel_weight) || 500;
+        const chargeData = await this.redxService.calculateCharge(bestArea.id, weight, redxToken);
+
+        // Final Price / Charge
+        const charge = chargeData?.delivery_charge || 60; // Fallback to 60 BDT if missing
+
+        // Re-call AI with the specific logistics data to provide a natural response
+        const logisticsContext = `
+          ### REDX REAL-TIME DATA (INTERNAL ONLY - DO NOT SHOW AS JSON)
+          - Area: ${bestArea.name} (Matched from user query "${areaName}")
+          - Charge: ${charge} BDT
+          - Estimated Delivery: ${chargeData?.estimated_delivery_time || '2-3 days'}
+          
+          Now respond to the user politely using this data. If they seem to be placing an order, encourage them to confirm.
+        `;
+
+        const basePrompt = await this.buildSystemPrompt(shop, 'chat', userMessage);
+        const enrichedPrompt = `${basePrompt}\n\n${logisticsContext}`;
+
+        const finalResponse = await this.callAi(
+          enrichedPrompt,
+          history,
+          userMessage,
+          undefined,
+          true,
+        );
+
+        // Preserve the shipping details in the final JSON for order creation logic
+        finalResponse.shipping_details = {
+          area_id: bestArea.id,
+          area_name: bestArea.name,
+          charge: charge,
+          etd: chargeData?.estimated_delivery_time,
+        };
+
+        return finalResponse;
+      } else {
+        aiResponse.reply_message += " (Note: We couldn't find a exact delivery area match in our courier service for your location. Please provide a major area name.)";
+      }
+    } catch (err) {
+      this.logger.error(`Logistics processing failed: ${err.message}`);
+    }
+
+    return aiResponse;
+  }
+
+  private async processTrackingIntent(
+    aiResponse: any,
+    shop: ShopWithPrompt,
+    userMessage: string,
+    history: any[],
+  ): Promise<any> {
+    const orderId = aiResponse.data?.order_id;
+    if (!orderId) {
+      aiResponse.reply_message = "I'd be happy to help you track your order! Could you please provide your Order ID or Invoice Number?";
+      return aiResponse;
+    }
+
+    try {
+      this.logger.log(`Performing order lookup for tracking: ${orderId}`);
+
+      const order = await this.db.order.findFirst({
+        where: {
+          shopId: shop.id,
+          OR: [
+            { id: { startsWith: orderId, mode: 'insensitive' } },
+            { invoiceNumber: { contains: orderId, mode: 'insensitive' } },
+            { trackingId: { contains: orderId, mode: 'insensitive' } }
+          ]
+        },
+        include: { shop: true }
+      });
+
+      if (!order) {
+        aiResponse.reply_message = `I couldn't find any order matching "${orderId}". Please double-check the ID and try again.`;
+        return aiResponse;
+      }
+
+      let trackingContext = `### INTERNAL ORDER DATA\n- ID: ${order.id}\n- Status: ${order.status}\n`;
+
+      if (order.trackingId && order.shop?.redxToken) {
+        try {
+          this.logger.log(`Fetching real-time RedX tracking for: ${order.trackingId}`);
+          const trackData = await this.redxService.trackParcel(order.trackingId, order.shop.redxToken);
+          trackingContext += `- Courier: RedX\n- Tracking ID: ${order.trackingId}\n- Courier Status: ${trackData?.parcel?.status || 'Unknown'}\n- Courier Message: ${trackData?.parcel?.message_en || 'Processing'}`;
+        } catch (err) {
+          this.logger.warn(`RedX tracking failed: ${err.message}`);
+          trackingContext += `- Courier Status: Update unavailable (Service busy)`;
+        }
+      }
+
+      const basePrompt = await this.buildSystemPrompt(shop, 'chat', userMessage);
+      const enrichedPrompt = `${basePrompt}\n\n${trackingContext}\n\nNow respond to the user with their order status in a friendly way. Mention the tracking ID and last courier update if available.`;
+
+      return await this.callAi(
+        enrichedPrompt,
+        history,
+        userMessage,
+        undefined,
+        true
+      );
+    } catch (err) {
+      this.logger.error(`Tracking processing failed: ${err.message}`);
+      return aiResponse;
+    }
+  }
+
+  private async processReturnIntent(
+    aiResponse: any,
+    shop: ShopWithPrompt,
+    userMessage: string,
+    history: any[],
+  ): Promise<any> {
+    const orderId = aiResponse.data?.order_id;
+    const reason = aiResponse.data?.return_reason;
+
+    if (!orderId) {
+      aiResponse.reply_message = "I am sorry to hear you want to return an item. To help you with that, could you please provide your Order ID or Invoice Number?";
+      return aiResponse;
+    }
+
+    try {
+      this.logger.log(`Processing return request for order: ${orderId}`);
+
+      const order = await this.db.order.findFirst({
+        where: {
+          shopId: shop.id,
+          OR: [
+            { id: { startsWith: orderId, mode: 'insensitive' } },
+            { invoiceNumber: { contains: orderId, mode: 'insensitive' } },
+            { trackingId: { contains: orderId, mode: 'insensitive' } }
+          ]
+        },
+        include: { shop: true }
+      });
+
+      if (!order) {
+        aiResponse.reply_message = `I couldn't find any order matching "${orderId}". Please make sure the number is correct.`;
+        return aiResponse;
+      }
+
+      let returnContext = `### INTERNAL ORDER DATA\n- ID: ${order.id}\n- Current Status: ${order.status}\n`;
+      let canReturn = false;
+
+      // Generally, only Shipped or Delivered items are "Returned". Draft/Pending are "Cancelled".
+      if (order.status === 'DELIVERED' || order.status === 'SHIPPED') {
+        canReturn = true;
+
+        // Update DB to mark as Return Requested (Using shipmentStatus as a flag)
+        await this.db.order.update({
+          where: { id: order.id },
+          data: {
+            shipmentStatus: 'RETURN_REQUESTED',
+          }
+        });
+
+        // Also log this in conversation if possible, or we just rely on order status.
+        this.logger.log(`Flagged order ${order.id} for Return Pickup. Reason: ${reason}`);
+
+        returnContext += `- Action Taken: Return request logged successfully.\n- Instruction for AI: Tell the user that their return request has been submitted and a delivery agent will contact them within 2-3 days for pickup.`;
+      } else if (order.status === 'PENDING' || order.status === 'CONFIRMED') {
+        // They want to cancel before shipping
+        canReturn = true;
+        await this.db.order.update({
+          where: { id: order.id },
+          data: { status: 'CANCELLED' }
+        });
+        returnContext += `- Action Taken: Order was not shipped yet, so it has been CANCELLED instead of returned.\n- Instruction for AI: Tell the user the order was cancelled successfully and no delivery will take place.`;
+      } else {
+        returnContext += `- Action Taken: Cannot return an order in ${order.status} status.\n- Instruction for AI: Politely explain that this order cannot be returned right now because of its current status.`;
+      }
+
+      const basePrompt = await this.buildSystemPrompt(shop, 'chat', userMessage);
+      const enrichedPrompt = `${basePrompt}\n\n${returnContext}\n\nNow respond to the user based on the action taken.`;
+
+      return await this.callAi(
+        enrichedPrompt,
+        history,
+        userMessage,
+        undefined,
+        true
+      );
+    } catch (err) {
+      this.logger.error(`Return processing failed: ${err.message}`);
+      aiResponse.reply_message = "I couldn't process your return request right now due to a system issue. Please try again later or contact human support.";
+      return aiResponse;
     }
   }
 }

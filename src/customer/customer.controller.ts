@@ -6,6 +6,7 @@ import {
   Body,
   UseGuards,
   Req,
+  Query,
 } from '@nestjs/common';
 import { CustomerService } from './customer.service';
 import { AuthGuard } from '@nestjs/passport';
@@ -20,9 +21,9 @@ export class CustomerController {
 
   @Get()
   @Roles(UserRole.ADMIN, UserRole.SUPERADMIN)
-  async findAll(@Req() req: any) {
+  async findAll(@Req() req: any, @Query('page') page?: string, @Query('limit') limit?: string) {
     const shopId = req.user.shopId;
-    return this.customerService.findAll(shopId);
+    return this.customerService.findAll(shopId, Number(page) || 1, Number(limit) || 20);
   }
 
   @Get('stats')

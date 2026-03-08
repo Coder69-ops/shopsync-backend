@@ -7,6 +7,7 @@ import { VoiceService } from '../voice/voice.service';
 import { DatabaseService } from '../database/database.service';
 import { FacebookService } from '../facebook/facebook.service';
 import { UsageService } from '../usage/usage.service';
+import { ChatGateway } from '../inbox/chat.gateway';
 import * as crypto from 'crypto';
 
 interface FacebookEvent {
@@ -39,7 +40,12 @@ interface FacebookEvent {
   }>;
 }
 
-@Processor('chat-queue')
+@Processor('chat-queue', {
+  limiter: {
+    max: process.env.AI_RATE_LIMIT_MAX ? parseInt(process.env.AI_RATE_LIMIT_MAX, 10) : 290,
+    duration: process.env.AI_RATE_LIMIT_DURATION ? parseInt(process.env.AI_RATE_LIMIT_DURATION, 10) : 60000,
+  },
+})
 export class WebhookProcessor extends WorkerHost {
   // Nudge: Service updated to recognize Post and Comment models
   private readonly logger = new Logger(WebhookProcessor.name);
@@ -51,6 +57,7 @@ export class WebhookProcessor extends WorkerHost {
     private readonly db: DatabaseService,
     private readonly facebookService: FacebookService,
     private readonly usageService: UsageService,
+    private readonly chatGateway: ChatGateway,
   ) {
     super();
   }
@@ -157,7 +164,7 @@ export class WebhookProcessor extends WorkerHost {
 
           const { publicReply, privateReply, shouldSendDm } = aiResult;
 
-          const canReply = await this.usageService.canSendMessage(shop.id);
+          const canReply = await this.usageService.canSendMessage(shop.id, shop);
           if (!canReply) {
             this.logger.warn(
               `Shop ${shop.id} message limit reached. Skipping comment reply.`,
@@ -165,10 +172,21 @@ export class WebhookProcessor extends WorkerHost {
             continue;
           }
 
+          if (aiResult.thought !== 'Fallback due to error' && aiResult.thought !== 'Trial Expired') {
+            await this.db.usageLog.create({
+              data: {
+                id: crypto.randomUUID(),
+                shopId: shop.id,
+                type: 'MESSAGE_AI',
+              },
+            });
+          }
+
           // Branding for Basic Plan
           const removeWatermark = await this.usageService.hasFeatureAccess(
             shop.id,
             'removeWatermark',
+            shop
           );
           let finalPublicReply = publicReply;
 
@@ -255,6 +273,7 @@ export class WebhookProcessor extends WorkerHost {
             const canUseVoice = await this.usageService.hasFeatureAccess(
               shop.id,
               'canUseVoiceAI',
+              shop
             );
             if (!canUseVoice) {
               this.logger.log(
@@ -315,30 +334,47 @@ export class WebhookProcessor extends WorkerHost {
               name: 'Messenger User',
             },
           });
+          // 2. Fetch Customer Profile if not fetching already
+          const profile = await this.facebookService.getUserProfile(
+            messaging.sender.id,
+            shop.fbPageAccessToken
+          );
 
-          // 2. Get or Create Conversation
+          // 3. Get or Create Conversation
           const conversation = await this.db.conversation.upsert({
             where: {
               shopId_psid: {
                 shopId: shop.id,
-                psid: messaging.sender.id, // Keeping psid in conversation for now assuming it wasn't strictly changed
+                psid: messaging.sender.id,
               },
             },
-            update: {},
+            update: {
+              customerName: profile?.name || undefined,
+              customerAvatar: profile?.profilePic || undefined,
+            },
             create: {
               shopId: shop.id,
               psid: messaging.sender.id,
+              customerName: profile?.name || 'Facebook User',
+              customerAvatar: profile?.profilePic || '',
             },
           });
 
           // 3. Save User Message
-          await this.db.message.create({
+          const savedMessage = await this.db.message.create({
             data: {
               conversationId: conversation.id,
               sender: 'USER',
               content: userMessage,
               type: 'TEXT',
             },
+          });
+
+          // NEW: Emit to UI
+          this.chatGateway.emitNewMessage(shop.id, savedMessage);
+          this.chatGateway.emitConversationUpdate(shop.id, {
+            ...conversation,
+            lastMessage: userMessage,
           });
 
           // 4. Fetch History (last 10 messages)
@@ -360,7 +396,7 @@ export class WebhookProcessor extends WorkerHost {
               }));
 
           // 5. Get AI Response (Structured)
-          const canReply = await this.usageService.canSendMessage(shop.id);
+          const canReply = await this.usageService.canSendMessage(shop.id, shop);
           if (!canReply) {
             const limitMessage =
               'Your monthly AI message limit has been reached. Please upgrade your plan to continue using AI features.';
@@ -379,13 +415,15 @@ export class WebhookProcessor extends WorkerHost {
             history,
           );
 
-          await this.db.usageLog.create({
-            data: {
-              id: crypto.randomUUID(),
-              shopId: shop.id,
-              type: 'MESSAGE_AI',
-            },
-          });
+          if (aiResponse.thought !== 'Fallback due to error' && aiResponse.thought !== 'Trial Expired') {
+            await this.db.usageLog.create({
+              data: {
+                id: crypto.randomUUID(),
+                shopId: shop.id,
+                type: 'MESSAGE_AI',
+              },
+            });
+          }
 
           let responseText = aiResponse.reply_message;
           const intent = aiResponse.intent;
@@ -607,7 +645,7 @@ export class WebhookProcessor extends WorkerHost {
             this.logger.warn(`Failed to process AI intent: ${error.message}`);
           }
 
-          await this.db.message.create({
+          const savedBotMsg = await this.db.message.create({
             data: {
               conversationId: conversation.id,
               sender: 'BOT',
@@ -618,13 +656,21 @@ export class WebhookProcessor extends WorkerHost {
 
           await this.db.conversation.update({
             where: { id: conversation.id },
-            data: { lastMessage: userMessage },
+            data: { lastMessage: responseText },
+          });
+
+          // NEW: Emit to UI
+          this.chatGateway.emitNewMessage(shop.id, savedBotMsg);
+          this.chatGateway.emitConversationUpdate(shop.id, {
+            ...conversation,
+            lastMessage: responseText,
           });
 
           // Branding for Basic Plan
           const removeWatermark = await this.usageService.hasFeatureAccess(
             shop.id,
             'removeWatermark',
+            shop
           );
           if (!removeWatermark) {
             responseText += '\n\n⚡ Powered by ShopSync';

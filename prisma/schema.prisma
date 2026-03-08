@@ -140,6 +140,18 @@ model Shop {
   redxToken   String? // Bearer token from RedX dashboard
   redxStoreId String? // Optional: RedX pickup store ID
 
+  // WooCommerce Integration
+  wooCommerceUrl    String?
+  wooCommerceKey    String?
+  wooCommerceSecret String?
+
+  // Shopify Integration
+  shopifyUrl                  String?
+  shopifyAccessToken         String?
+  shopifyClientId            String?
+  shopifyClientSecret        String?
+  shopifyAccessTokenExpiresAt DateTime?
+
   // AI Settings
   deliveryCharge       Decimal?
   minOrderValue        Decimal?
@@ -239,8 +251,43 @@ model Campaign {
 
   stats Json? // { "sent": 100, "failed": 2 }
 
+  // ROI Tracking
+  revenueGenerated Decimal @default(0)
+  ordersCount      Int     @default(0)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  recipients      CampaignRecipient[]
+  ordersGenerated Order[]
+}
+
+enum CampaignRecipientStatus {
+  PENDING
+  SENT
+  DELIVERED
+  FAILED
+}
+
+model CampaignRecipient {
+  id         String                  @id @default(uuid())
+  campaignId String
+  campaign   Campaign                @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  customerId String
+  customer   Customer                @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  status     CampaignRecipientStatus @default(PENDING)
+
+  externalMsgId String?
+  errorMessage  String?
+
+  sentAt      DateTime?
+  deliveredAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([campaignId, customerId])
+  @@index([campaignId, status])
 }
 
 model Customer {
@@ -259,6 +306,7 @@ model Customer {
   shop   Shop   @relation(fields: [shopId], references: [id])
 
   orders Order[]
+  campaignsReceived CampaignRecipient[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -311,10 +359,14 @@ model Conversation {
   id          String   @id @default(uuid())
   shopId      String
   shop        Shop     @relation(fields: [shopId], references: [id])
-  psid        String // User's Page Scoped ID (Facebook User ID)
-  status      String   @default("ACTIVE") // ACTIVE, PAUSED
-  lastMessage String?
-  updatedAt   DateTime @updatedAt
+  psid           String // User's Page Scoped ID (Facebook User ID)
+  customerName   String?
+  customerAvatar String?
+  status         String   @default("ACTIVE") // ACTIVE, PAUSED
+  lastMessage    String?
+  tags           String[] @default([]) // e.g. ["VIP", "High Return Risk"]
+  internalNotes  Json?    // Array of { adminId, note, createdAt }
+  updatedAt      DateTime @updatedAt
 
   messages Message[]
 
@@ -389,6 +441,13 @@ model Order {
   courierConsignmentId String? // Alias for non-unique consignment IDs
   courierName          String? // e.g. "RedX", "Steadfast", "Pathao"
   shipmentStatus       String? // Courier-reported status
+
+  // External Sync
+  externalOrderId      String? // Track if pushed to WooCommerce/Shopify
+
+  // ROI Attribution
+  marketingCampaignId String?
+  marketingCampaign   Campaign? @relation(fields: [marketingCampaignId], references: [id])
 
   source    OrderSource @default(MANUAL)
   createdAt DateTime    @default(now())
@@ -517,6 +576,33 @@ model SystemConfig {
   adminAlertEmailSubject String  @default("New Shop Registration 🏢")
   adminAlertEmailBody    String? @db.Text
 
+  verifyEmailSubject      String  @default("Verify your ShopSync account")
+  verifyEmailBody         String? @db.Text
+  forgotPasswordEmailSubject String  @default("Reset your ShopSync password")
+  forgotPasswordEmailBody    String? @db.Text
+
+  // Customer Flow
+  orderConfirmationSubject String  @default("Order Confirmed! ✅")
+  orderConfirmationBody    String? @db.Text
+  orderCancelledSubject    String  @default("Order Cancelled 🚫")
+  orderCancelledBody       String? @db.Text
+  orderReturnedSubject     String  @default("Return Received 📦")
+  orderReturnedBody        String? @db.Text
+  shippingUpdateSubject    String  @default("Your Package is on the Way! 🚚")
+  shippingUpdateBody       String? @db.Text
+
+  // Billing & Trial
+  subscriptionActivatedSubject String  @default("Subscription Activated! ✨")
+  subscriptionActivatedBody    String? @db.Text
+  paymentReceivedSubject       String  @default("Payment Proof Received 📥")
+  paymentReceivedBody          String? @db.Text
+  paymentRejectedSubject       String  @default("Payment Verification Failed ❌")
+  paymentRejectedBody          String? @db.Text
+  trialExpirySubject           String  @default("Trial Ending Soon! ⏳")
+  trialExpiryBody              String? @db.Text
+  trialExpiredSubject          String  @default("Trial Expired 🔒")
+  trialExpiredBody             String? @db.Text
+
   // 5. Payment Methods (Legacy - Migrated to PaymentMethod model)
   // bkashNumber and nagadNumber removed in favor of dynamic PaymentMethod model
 
@@ -595,3 +681,54 @@ model KnowledgeBase {
   answer   String  @db.Text
   isActive Boolean @default(true)
 }
+
+model EmailPreset {
+  id           String  @id @default(uuid())
+  name         String
+  description  String?
+  thumbnailUrl String?
+
+  globalEmailTemplate String @db.Text
+
+  welcomeEmailSubject String @default("Welcome!")
+  welcomeEmailBody    String @db.Text @default("")
+
+  newOrderEmailSubject String @default("New Order")
+  newOrderEmailBody    String @db.Text @default("")
+
+  lowStockEmailSubject String @default("Low Stock")
+  lowStockEmailBody    String @db.Text @default("")
+
+  adminAlertEmailSubject String @default("System Alert")
+  adminAlertEmailBody    String @db.Text @default("")
+
+  verifyEmailSubject      String @default("Verify Email")
+  verifyEmailBody         String @db.Text @default("")
+  forgotPasswordEmailSubject String @default("Reset Password")
+  forgotPasswordEmailBody    String @db.Text @default("")
+
+  // Customer Flow
+  orderConfirmationSubject String @default("Order Confirmed")
+  orderConfirmationBody    String @db.Text @default("")
+  orderCancelledSubject    String @default("Order Cancelled")
+  orderCancelledBody       String @db.Text @default("")
+  orderReturnedSubject     String @default("Order Returned")
+  orderReturnedBody        String @db.Text @default("")
+  shippingUpdateSubject    String @default("Shipping Update")
+  shippingUpdateBody       String @db.Text @default("")
+
+  // Billing & Trial
+  subscriptionActivatedSubject String @default("Subscription Active")
+  subscriptionActivatedBody    String @db.Text @default("")
+  paymentReceivedSubject       String @default("Payment Received")
+  paymentReceivedBody          String @db.Text @default("")
+  paymentRejectedSubject       String @default("Payment Rejected")
+  paymentRejectedBody          String @db.Text @default("")
+  trialExpirySubject           String @default("Trial Expiring")
+  trialExpiryBody              String @db.Text @default("")
+  trialExpiredSubject          String @default("Trial Expired")
+  trialExpiredBody             String @db.Text @default("")
+
+  createdAt DateTime @default(now())
+}
+

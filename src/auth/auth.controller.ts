@@ -35,11 +35,26 @@ export class AuthController {
 
   @HttpCode(HttpStatus.CREATED)
   @Post('register')
-  signUp(@Body() registerDto: RegisterDto) {
+  signUp(
+    @Body() registerDto: RegisterDto,
+    @Req() req: any,
+  ) {
+    const rawIp = req.headers['cf-connecting-ip'] || req.headers['x-forwarded-for'] || req.socket?.remoteAddress;
+    const clientIp = typeof rawIp === 'string' ? rawIp.split(',')[0].trim() : Array.isArray(rawIp) ? rawIp[0].trim() : '';
+
+    const reqDetails = {
+      ip: clientIp,
+      userAgent: req.headers['user-agent'],
+      sourceUrl: req.headers.referer || req.headers.origin || 'https://www.shopsync.it.com/',
+      firstName: registerDto.firstName,
+      lastName: registerDto.lastName,
+      phone: registerDto.phone,
+    };
     return this.authService.signUp(
       registerDto.email,
       registerDto.password,
       registerDto.shopName,
+      reqDetails
     );
   }
 

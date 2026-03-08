@@ -98,11 +98,28 @@ export class ProductService {
     });
   }
 
-  async findAll(shopId: string) {
-    return this.databaseService.product.findMany({
-      where: { shopId },
-      orderBy: { updatedAt: 'desc' },
-    });
+  async findAll(shopId: string, page: number = 1, limit: number = 20) {
+    const skip = (page - 1) * limit;
+
+    const [products, total] = await Promise.all([
+      this.databaseService.product.findMany({
+        where: { shopId },
+        orderBy: { updatedAt: 'desc' },
+        skip,
+        take: limit,
+      }),
+      this.databaseService.product.count({ where: { shopId } }),
+    ]);
+
+    return {
+      data: products,
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
   }
 
   async findOne(id: string, shopId: string) {

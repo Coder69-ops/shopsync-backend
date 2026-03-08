@@ -8,6 +8,7 @@ import { WebhookProcessor } from './webhook.processor';
 import { VoiceModule } from '../voice/voice.module';
 import { DatabaseModule } from '../database/database.module';
 import { FacebookModule } from '../facebook/facebook.module';
+import { InboxModule } from '../inbox/inbox.module';
 
 @Module({
   imports: [
@@ -19,8 +20,9 @@ import { FacebookModule } from '../facebook/facebook.module';
     OrderModule,
     VoiceModule,
     FacebookModule,
+    InboxModule,
   ],
   controllers: [WebhookController],
   providers: [WebhookService, WebhookProcessor],
 })
-export class WebhookModule {}
+export class WebhookModule { }

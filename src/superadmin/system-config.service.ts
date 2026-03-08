@@ -49,6 +49,11 @@ export class SystemConfigService {
           newOrderEmailSubject: 'New Order Received! 🛍️',
           lowStockEmailSubject: '⚠️ Low Stock Alert',
           adminAlertEmailSubject: 'New Shop Registration 🏢',
+          adminAlertEmailBody: '<h1 style="margin-top:0;">New Registration</h1><div style="background: #f1f5f9; border-radius: 12px; padding: 20px;"><p style="margin: 0;"><strong>Email:</strong> #EMAIL#</p><p style="margin: 8px 0 0;"><strong>Shop Name:</strong> #SHOP_NAME#</p></div>',
+          verifyEmailSubject: 'Verify your ShopSync account',
+          verifyEmailBody: '<h1 style="margin-top:0; font-size: 28px; font-weight: 700;">Account Verification</h1><p>Hello #USER_NAME#,<br/><br/>Please verify your account by clicking the button below:</p><div style="text-align: center; margin-top: 32px;"><a href="#VERIFY_LINK#" class="btn">Verify Email</a></div>',
+          forgotPasswordEmailSubject: 'Reset your ShopSync password',
+          forgotPasswordEmailBody: '<h1 style="margin-top:0; font-size: 28px; font-weight: 700;">Password Reset</h1><p>Hello #USER_NAME#,<br/><br/>We received a request to reset your password. Click the button below to proceed:</p><div style="text-align: center; margin-top: 32px;"><a href="#RESET_LINK#" class="btn">Reset Password</a></div>',
         } as any,
       });
     }

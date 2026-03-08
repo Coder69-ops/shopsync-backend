@@ -24,7 +24,7 @@ export class EmailService {
     const config = (await this.systemConfigService.getConfig()) as any;
     const year = new Date().getFullYear();
     const displayShopName = shopName || config.emailSenderName || 'ShopSync';
-    const logoUrl = `${this.frontendUrl}/logo.png`;
+    const logoUrl = `${this.frontendUrl.includes('localhost') ? 'https://shopsync.it.com' : this.frontendUrl}/icon-512x512.png`;
 
     let actionHtml = '';
     if (actionUrl) {
@@ -48,6 +48,17 @@ export class EmailService {
       template = template.replace(/#YEAR#/g, year.toString());
       template = template.replace(/#DASHBOARD_URL#/g, this.frontendUrl);
       template = template.replace(/#LOGO_URL#/g, logoUrl);
+
+      // New placeholders
+      template = template.replace(/#UNSUBSCRIBE_URL#/g, `${this.frontendUrl}/unsubscribe`);
+      template = template.replace(/#SHOP_ADDRESS#/g, config.emailSupportContact || 'Dhaka, Bangladesh');
+      template = template.replace(/#SOCIAL_LINKS#/g, `
+        <div style="margin-top: 20px;">
+          <a href="#" style="margin: 0 10px; color: inherit; text-decoration: none;">Facebook</a>
+          <a href="#" style="margin: 0 10px; color: inherit; text-decoration: none;">Instagram</a>
+          <a href="#" style="margin: 0 10px; color: inherit; text-decoration: none;">Twitter</a>
+        </div>
+      `);
       return template;
     }
 
@@ -173,22 +184,44 @@ export class EmailService {
   }
 
   async sendResetPasswordEmail(to: string, token: string) {
+    const config = (await this.systemConfigService.getConfig()) as any;
     const resetLink = `${this.frontendUrl}/reset-password?token=${token}`;
-    const content = `
+
+    const subject = config.forgotPasswordEmailSubject || 'Reset your ShopSync password';
+    let body = config.forgotPasswordEmailBody || `
       <h1 style="color: #18181b; font-size: 24px; font-weight: 800; margin-top: 0; margin-bottom: 16px; letter-spacing: -0.025em;">Reset Your Password</h1>
       <p style="margin: 0 0 16px 0;">Hello,</p>
       <p style="margin: 0 0 16px 0;">We received a request to reset your password for your ShopSync account. If you didn't make this request, you can safely ignore this email.</p>
-      <p style="margin: 0;">To set a new password, click the button below:</p>`;
-    return this.sendEmail(to, 'Reset your ShopSync password', await this.getTemplate(content, resetLink, 'Reset Password'), `reset-password/${token}`);
+      <p style="margin: 0;">To set a new password, click the button below:</p>
+      <div style="text-align: center; margin-top: 32px;"><a href="#RESET_LINK#" class="btn">Reset Password</a></div>`;
+
+    body = body.replace(/#RESET_LINK#/g, resetLink);
+    body = body.replace(/#USER_NAME#/g, to.split('@')[0]);
+
+    return this.sendEmail(to, subject, await this.getTemplate(body), `reset-password/${token}`);
   }
 
   async sendVerificationEmail(to: string, token: string) {
+    const config = (await this.systemConfigService.getConfig()) as any;
     const verificationLink = `${this.frontendUrl}/verify-email?token=${token}`;
-    const content = `
-      <h1 style="color: #18181b; font-size: 24px; font-weight: 800; margin-top: 0; margin-bottom: 16px; letter-spacing: -0.025em;">Verify Your Email</h1>
-      <p style="margin: 0 0 16px 0;">Welcome to ShopSync OS! We're excited to have you on board. Please verify your email address to complete your registration and start managing your shop.</p>
-      <p style="margin: 0;">Click the button below to verify:</p>`;
-    return this.sendEmail(to, 'Verify your ShopSync account', await this.getTemplate(content, verificationLink, 'Verify Email'), `verify-email/${token}`);
+
+    const subject = config.verifyEmailSubject || 'Verify your ShopSync account';
+    let body = config.verifyEmailBody || `
+      <div style="text-align: center; margin-bottom: 32px;">
+        <div style="display: inline-block; background-color: #eff6ff; padding: 20px; border-radius: 32px; margin-bottom: 24px;">
+            <span style="font-size: 48px;">✉️</span>
+        </div>
+        <h1 style="color: #0f172a; font-size: 32px; font-weight: 800; margin: 0 0 16px 0; letter-spacing: -0.04em;">Confirm your email</h1>
+        <p style="color: #64748b; font-size: 18px; line-height: 1.6; margin: 0 auto; max-width: 400px;">
+            Welcome to ShopSync! Please verify your email to get started.
+        </p>
+      </div>
+      <div style="text-align: center; margin-top: 32px;"><a href="#VERIFY_LINK#" class="btn">Verify Email</a></div>`;
+
+    body = body.replace(/#VERIFY_LINK#/g, verificationLink);
+    body = body.replace(/#USER_NAME#/g, to.split('@')[0]);
+
+    return this.sendEmail(to, subject, await this.getTemplate(body), `verify-email/${token}`);
   }
 
   async sendWelcomeMerchant(to: string, shopName: string) {
@@ -274,14 +307,24 @@ export class EmailService {
     try { if (typeof items === 'string') items = JSON.parse(items); } catch (e) { }
 
     const itemListHtml = Array.isArray(items) ? `
-      <div style="margin: 20px 0; border-top: 1px solid #e4e4e7; padding-top: 16px;">
-        ${items.map((item: any) => `
-          <div style="display: flex; justify-content: space-between; margin-bottom: 12px; font-size: 14px;">
-            <span style="color: #3f3f46; font-weight: 500;">${item.name} <span style="color: #a1a1aa;">x${item.quantity}</span></span>
-            <span style="color: #18181b; font-weight: 600;">${item.price * item.quantity} BDT</span>
-          </div>
-        `).join('')}
-      </div>
+      <table width="100%" cellpadding="0" cellspacing="0" style="margin: 20px 0; border-top: 1px solid #e2e8f0;">
+        <thead>
+          <tr>
+            <th align="left" style="padding: 12px 0; font-size: 12px; text-transform: uppercase; color: #64748b; font-weight: 600;">Product</th>
+            <th align="center" style="padding: 12px 0; font-size: 12px; text-transform: uppercase; color: #64748b; font-weight: 600;">Qty</th>
+            <th align="right" style="padding: 12px 0; font-size: 12px; text-transform: uppercase; color: #64748b; font-weight: 600;">Price</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${items.map((item: any) => `
+            <tr>
+              <td style="padding: 12px 0; border-top: 1px solid #f1f5f9; font-size: 14px; color: #334155;">${item.name}</td>
+              <td align="center" style="padding: 12px 0; border-top: 1px solid #f1f5f9; font-size: 14px; color: #334155;">${item.quantity}</td>
+              <td align="right" style="padding: 12px 0; border-top: 1px solid #f1f5f9; font-size: 14px; font-weight: 600; color: #0f172a;">${item.price * item.quantity} BDT</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
     ` : '';
 
     let content = '';
@@ -326,14 +369,24 @@ export class EmailService {
     try { if (typeof items === 'string') items = JSON.parse(items); } catch (e) { }
 
     const itemListHtml = Array.isArray(items) ? `
-      <div style="margin: 20px 0; border-top: 1px solid #e4e4e7; padding-top: 16px;">
-        ${items.map((item: any) => `
-          <div style="display: flex; justify-content: space-between; margin-bottom: 12px; font-size: 14px;">
-            <span style="color: #3f3f46; font-weight: 500;">${item.name} <span style="color: #a1a1aa;">x${item.quantity}</span></span>
-            <span style="color: #18181b; font-weight: 600;">${item.price * item.quantity} BDT</span>
-          </div>
-        `).join('')}
-      </div>
+      <table width="100%" cellpadding="0" cellspacing="0" style="margin: 20px 0; border-top: 1px solid #e2e8f0;">
+        <thead>
+          <tr>
+            <th align="left" style="padding: 12px 0; font-size: 12px; text-transform: uppercase; color: #64748b; font-weight: 600;">Product</th>
+            <th align="center" style="padding: 12px 0; font-size: 12px; text-transform: uppercase; color: #64748b; font-weight: 600;">Qty</th>
+            <th align="right" style="padding: 12px 0; font-size: 12px; text-transform: uppercase; color: #64748b; font-weight: 600;">Price</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${items.map((item: any) => `
+            <tr>
+              <td style="padding: 12px 0; border-top: 1px solid #f1f5f9; font-size: 14px; color: #334155;">${item.name}</td>
+              <td align="center" style="padding: 12px 0; border-top: 1px solid #f1f5f9; font-size: 14px; color: #334155;">${item.quantity}</td>
+              <td align="right" style="padding: 12px 0; border-top: 1px solid #f1f5f9; font-size: 14px; font-weight: 600; color: #0f172a;">${item.price * item.quantity} BDT</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
     ` : '';
 
     const content = `
@@ -350,7 +403,7 @@ export class EmailService {
         
         <div style="margin-top: 24px; padding-top: 24px; border-top: 1px solid #e4e4e7;">
             <h5 style="margin: 0 0 8px 0; color: #71717a; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 700;">Shipping to:</h5>
-            <p style="margin: 0; font-size: 14px; color: #3f3f46; line-height: 1.5;">${order.customerAddress}</p>
+            <p style="margin: 0; font-size: 14px; color: #334155; line-height: 1.5;">${order.customerAddress}</p>
         </div>
       </div>`;
     return this.sendEmail(to, `✅ Your ${shopName} order #${orderIdShort} is confirmed!`, await this.getTemplate(content, undefined, undefined, shopName), `order-confirmation/${order.id}`);

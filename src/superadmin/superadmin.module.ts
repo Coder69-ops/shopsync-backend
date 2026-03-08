@@ -8,12 +8,14 @@ import { BullModule } from '@nestjs/bullmq';
 import { SystemConfigService } from './system-config.service';
 
 import { SystemConfigModule } from './system-config.module';
+import { AiModule } from '../ai/ai.module';
 
 @Module({
   imports: [
     DatabaseModule,
     AuthModule,
     SystemConfigModule,
+    AiModule,
     BullModule.registerQueue({
       name: 'chat-queue',
     }),
@@ -22,4 +24,4 @@ import { SystemConfigModule } from './system-config.module';
   providers: [SuperAdminService, HealthService],
   exports: [SuperAdminService, SystemConfigModule],
 })
-export class SuperAdminModule {}
+export class SuperAdminModule { }

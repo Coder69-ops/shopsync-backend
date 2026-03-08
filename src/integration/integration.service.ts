@@ -2,38 +2,18 @@ import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service';
 import { ConnectWooCommerceDto } from './dto/connect-woocommerce.dto';
 import axios from 'axios';
-import * as crypto from 'crypto';
+import { encrypt, decrypt } from '../common/utils/encryption.util';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 
 @Injectable()
 export class IntegrationService {
     private readonly logger = new Logger(IntegrationService.name);
-    private readonly ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || '12345678901234567890123456789012'; // 32 chars
-    private readonly IV_LENGTH = 16;
 
     constructor(
         private readonly db: DatabaseService,
         @InjectQueue('sync-queue') private readonly syncQueue: Queue,
     ) { }
-
-    private encrypt(text: string): string {
-        const iv = crypto.randomBytes(this.IV_LENGTH);
-        const cipher = crypto.createCipheriv('aes-256-cbc', Buffer.from(this.ENCRYPTION_KEY), iv);
-        let encrypted = cipher.update(text);
-        encrypted = Buffer.concat([encrypted, cipher.final()]);
-        return iv.toString('hex') + ':' + encrypted.toString('hex');
-    }
-
-    private decrypt(text: string): string {
-        const textParts = text.split(':');
-        const iv = Buffer.from(textParts.shift() as string, 'hex');
-        const encryptedText = Buffer.from(textParts.join(':'), 'hex');
-        const decipher = crypto.createDecipheriv('aes-256-cbc', Buffer.from(this.ENCRYPTION_KEY), iv);
-        let decrypted = decipher.update(encryptedText);
-        decrypted = Buffer.concat([decrypted, decipher.final()]);
-        return decrypted.toString();
-    }
 
     async connectWooCommerce(shopId: string, dto: ConnectWooCommerceDto) {
         try {
@@ -53,8 +33,8 @@ export class IntegrationService {
                 throw new Error('WooCommerce API returned non-200 status');
             }
 
-            const encryptedKey = this.encrypt(consumerKey);
-            const encryptedSecret = this.encrypt(consumerSecret);
+            const encryptedKey = encrypt(consumerKey);
+            const encryptedSecret = encrypt(consumerSecret);
 
             const shop = await this.db.shop.findUnique({ where: { id: shopId } });
             if (!shop) throw new BadRequestException('Shop not found');
@@ -68,7 +48,12 @@ export class IntegrationService {
 
             await this.db.shop.update({
                 where: { id: shopId },
-                data: { platformIds },
+                data: {
+                    wooCommerceUrl: baseUrl,
+                    wooCommerceKey: encryptedKey,
+                    wooCommerceSecret: encryptedSecret,
+                    platformIds
+                },
             });
 
             this.logger.log(`WooCommerce connected for shop ${shopId}`);
@@ -117,7 +102,7 @@ export class IntegrationService {
             });
 
             const accessToken = response.data.access_token;
-            const encryptedToken = this.encrypt(accessToken);
+            const encryptedToken = encrypt(accessToken);
 
             const dbShop = await this.db.shop.findUnique({ where: { id: shopId } });
             if (!dbShop) throw new BadRequestException('Shop not found');
@@ -130,11 +115,15 @@ export class IntegrationService {
 
             await this.db.shop.update({
                 where: { id: shopId },
-                data: { platformIds },
+                data: {
+                    shopifyUrl: `https://${shop}`,
+                    shopifyAccessToken: encryptedToken,
+                    platformIds
+                },
             });
 
             this.logger.log(`Shopify connected for shop ${shopId}`);
-            await this.syncQueue.add('bulk-sync', { shopId, platform: 'SHOPIFY' });
+            await this.syncQueue.add('SYNC_PRODUCTS', { shopId, platform: 'SHOPIFY' });
 
             const frontendUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3001';
             return `${frontendUrl}/dashboard?integration=success`;
@@ -159,9 +148,19 @@ export class IntegrationService {
         const platformIds = shop.platformIds as any;
         if (platformIds[pStr]) {
             delete platformIds[pStr];
+            const updateData: any = { platformIds };
+            if (pStr === 'woocommerce') {
+                updateData.wooCommerceUrl = null;
+                updateData.wooCommerceKey = null;
+                updateData.wooCommerceSecret = null;
+            } else if (pStr === 'shopify') {
+                updateData.shopifyUrl = null;
+                updateData.shopifyAccessToken = null;
+            }
+
             await this.db.shop.update({
                 where: { id: shopId },
-                data: { platformIds }
+                data: updateData
             });
             this.logger.log(`Disconnected ${platform} for shop ${shopId}`);
 
@@ -180,8 +179,9 @@ export class IntegrationService {
         const shop = await this.db.shop.findUnique({ where: { id: shopId } });
         if (!shop || !shop.platformIds) throw new BadRequestException('Platform not connected');
 
-        const platformIds = shop.platformIds as any;
-        if (!platformIds[pStr]) throw new BadRequestException('Platform not connected');
+        const platformIds = (shop.platformIds as any) || {};
+        const isConnected = platformIds[pStr] || (pStr === 'woocommerce' ? shop.wooCommerceUrl : shop.shopifyUrl);
+        if (!isConnected) throw new BadRequestException('Platform not connected');
 
         await this.syncQueue.add('bulk-sync', { shopId, platform: pStr.toUpperCase() });
         this.logger.log(`Manual sync triggered for ${platform} shop ${shopId}`);

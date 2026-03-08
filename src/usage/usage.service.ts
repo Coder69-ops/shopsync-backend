@@ -6,10 +6,10 @@ import { SubscriptionPlan } from '@prisma/client';
 export class UsageService {
   private readonly logger = new Logger(UsageService.name);
 
-  constructor(private db: DatabaseService) {}
+  constructor(private db: DatabaseService) { }
 
-  async canSendMessage(shopId: string): Promise<boolean> {
-    const shop = await this.db.shop.findUnique({
+  async canSendMessage(shopId: string, shopData?: any): Promise<boolean> {
+    const shop = shopData || await this.db.shop.findUnique({
       where: { id: shopId },
     });
 
@@ -60,8 +60,8 @@ export class UsageService {
     return canSend;
   }
 
-  async canCreateOrder(shopId: string): Promise<boolean> {
-    const shop = await this.db.shop.findUnique({
+  async canCreateOrder(shopId: string, shopData?: any): Promise<boolean> {
+    const shop = shopData || await this.db.shop.findUnique({
       where: { id: shopId },
     });
 
@@ -101,8 +101,8 @@ export class UsageService {
     return usage < activeLimit;
   }
 
-  async hasFeatureAccess(shopId: string, featureKey: string): Promise<boolean> {
-    const shop = await this.db.shop.findUnique({ where: { id: shopId } });
+  async hasFeatureAccess(shopId: string, featureKey: string, shopData?: any): Promise<boolean> {
+    const shop = shopData || await this.db.shop.findUnique({ where: { id: shopId } });
     if (!shop) return false;
 
     // Check for custom feature overrides

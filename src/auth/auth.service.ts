@@ -6,6 +6,8 @@ import { EmailService } from '../email/email.service';
 import { SystemConfigService } from '../superadmin/system-config.service';
 import axios from 'axios';
 import { v4 as uuidv4 } from 'uuid';
+import { Queue } from 'bullmq';
+import { InjectQueue } from '@nestjs/bullmq';
 
 @Injectable()
 export class AuthService {
@@ -14,6 +16,7 @@ export class AuthService {
         private db: DatabaseService,
         private emailService: EmailService,
         private systemConfigService: SystemConfigService,
+        @InjectQueue('facebook-capi') private readonly fbCapiQueue: Queue,
     ) { }
 
     async signIn(email: string, pass: string): Promise<{ access_token: string }> {
@@ -54,7 +57,10 @@ export class AuthService {
 
         if (!user.isEmailVerified && user.role !== 'SUPERADMIN') {
             console.log(`[AUTH] Step 5.5: LOGIN FAILED - Email not verified`);
-            throw new UnauthorizedException('EMAIL_NOT_VERIFIED');
+            throw new UnauthorizedException({
+                message: 'EMAIL_NOT_VERIFIED',
+                code: 'EMAIL_NOT_VERIFIED'
+            });
         }
 
         // Add proper flags to payload
@@ -88,7 +94,7 @@ export class AuthService {
         };
     }
 
-    async signUp(email: string, pass: string, shopName?: string): Promise<any> {
+    async signUp(email: string, pass: string, shopName?: string, reqDetails?: any): Promise<any> {
         // Check if user exists
         const existing = await this.db.user.findUnique({ where: { email } });
         if (existing) throw new UnauthorizedException('User already exists');
@@ -129,6 +135,22 @@ export class AuthService {
 
         // Send verification email
         await this.emailService.sendVerificationEmail(email, verificationToken);
+
+        // Add Facebook CAPI Event to BullMQ Queue asynchronously
+        if (reqDetails && this.fbCapiQueue) {
+            this.fbCapiQueue.add('send-start-trial', {
+                userData: {
+                    email: email,
+                    firstName: reqDetails.firstName,
+                    lastName: reqDetails.lastName,
+                    phone: reqDetails.phone
+                },
+                reqParams: {
+                    clientIp: reqDetails.ip,
+                    userAgent: reqDetails.userAgent
+                }
+            }).catch(err => console.error('[AUTH] Failed to queue FB CAPI StartTrial:', err));
+        }
 
         return {
             message: 'Registration successful. Please check your email to verify your account.',
@@ -366,7 +388,11 @@ export class AuthService {
         };
 
         const token = await this.jwtService.signAsync(payload);
-        return { access_token: token, user };
+
+        // Remove password before returning
+        const { password, ...safeUser } = user;
+
+        return { access_token: token, user: safeUser };
     }
 
     async facebookAuth(accessToken: string): Promise<{ access_token: string }> {

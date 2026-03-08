@@ -16,4 +16,19 @@ export class RegisterDto {
   @IsString()
   @IsOptional()
   shopName?: string;
+
+  @ApiProperty({ example: 'John', required: false })
+  @IsString()
+  @IsOptional()
+  firstName?: string;
+
+  @ApiProperty({ example: 'Doe', required: false })
+  @IsString()
+  @IsOptional()
+  lastName?: string;
+
+  @ApiProperty({ example: '+8801700000000', required: false })
+  @IsString()
+  @IsOptional()
+  phone?: string;
 }

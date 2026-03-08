@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios, { AxiosInstance } from 'axios';
+import { decrypt } from '../common/utils/encryption.util';
 
 // ─── Public types ──────────────────────────────────────────────────────────────
 
@@ -62,8 +63,8 @@ export class RedxService {
     return axios.create({
       baseURL: this.baseUrl,
       headers: {
-        // RedX official auth header format
-        'API-ACCESS-TOKEN': `Bearer ${token}`,
+        // RedX official auth header format: Bearer <token>
+        'API-ACCESS-TOKEN': `Bearer ${decrypt(token)}`,
         'Content-Type': 'application/json',
         Accept: 'application/json',
       },
@@ -78,30 +79,44 @@ export class RedxService {
    * Used to power the area autocomplete dropdown in the Order Slideover.
    *
    * @param token  Shop's RedX bearer token
+   * @param query  Optional search query (e.g. area name)
    */
-  async getAreas(token: string): Promise<RedxArea[]> {
-    this.logger.log('Fetching RedX delivery areas');
+  async getAreas(token: string, query?: string): Promise<RedxArea[]> {
+    this.logger.log(`Fetching RedX delivery areas${query ? ` for query: ${query}` : ''}`);
     const client = this.buildClient(token);
 
     try {
       const { data } = await client.get<{ areas: RedxArea[] }>('/areas');
-      this.logger.log(`Fetched ${data?.areas?.length ?? 0} RedX areas`);
-      return data?.areas ?? [];
+      let areas = data?.areas ?? [];
+
+      if (query && areas.length > 0) {
+        const lowerQuery = query.toLowerCase();
+        areas = areas.filter(a => a.name.toLowerCase().includes(lowerQuery));
+      }
+
+      this.logger.log(`Found ${areas.length} matching RedX areas`);
+      return areas;
     } catch (err: any) {
       this.logger.error(
         `RedX GET /areas failed: ${err?.response?.data ? JSON.stringify(err.response.data) : err.message}`,
       );
 
       // Fallback: return a minimal mock so the UI stays functional during dev
+      const allMockAreas = [
+        { id: 1, name: 'Dhaka', post_code: '1200' },
+        { id: 2, name: 'Chittagong', post_code: '4000' },
+        { id: 3, name: 'Sylhet', post_code: '3100' },
+        { id: 4, name: 'Rajshahi', post_code: '6000' },
+        { id: 5, name: 'Khulna', post_code: '9100' },
+      ];
+
       if (!this.configService.get('REDX_BASE_URL')) {
         this.logger.warn('REDX_BASE_URL not set – returning mock area list');
-        return [
-          { id: 1, name: 'Dhaka', post_code: '1200' },
-          { id: 2, name: 'Chittagong', post_code: '4000' },
-          { id: 3, name: 'Sylhet', post_code: '3100' },
-          { id: 4, name: 'Rajshahi', post_code: '6000' },
-          { id: 5, name: 'Khulna', post_code: '9100' },
-        ];
+        if (query) {
+          const lowerQuery = query.toLowerCase();
+          return allMockAreas.filter(a => a.name.toLowerCase().includes(lowerQuery));
+        }
+        return allMockAreas;
       }
 
       throw new InternalServerErrorException(
@@ -199,6 +214,142 @@ export class RedxService {
       throw new BadRequestException(
         'parcel_weight must be at least 500 grams per RedX requirements.',
       );
+    }
+  }
+
+  // ─── Public: Track & Parcel Info ──────────────────────────────────────────
+
+  /**
+   * Track a parcel's real-time status.
+   */
+  async trackParcel(trackingId: string, token: string): Promise<any> {
+    this.logger.log(`Tracking RedX parcel: ${trackingId}`);
+    const client = this.buildClient(token);
+    try {
+      const { data } = await client.get(`/parcel/track/${trackingId}`);
+      return data;
+    } catch (err: any) {
+      this.logger.error(`RedX track failed: ${err?.message}`);
+      throw new InternalServerErrorException('Failed to fetch tracking details from RedX.');
+    }
+  }
+
+  /**
+   * Get detailed info, including collected COD amount.
+   */
+  async getParcelInfo(trackingId: string, token: string): Promise<any> {
+    this.logger.log(`Fetching RedX parcel info: ${trackingId}`);
+    const client = this.buildClient(token);
+    try {
+      const { data } = await client.get(`/parcel/info/${trackingId}`);
+      return data;
+    } catch (err: any) {
+      this.logger.error(`RedX info failed: ${err?.message}`);
+      throw new InternalServerErrorException('Failed to fetch parcel info from RedX.');
+    }
+  }
+
+  /**
+   * Get parcel pdf configuration (pdfmake format) from RedX v4 API.
+   */
+  async getLabel(trackingId: string, token: string): Promise<any> {
+    this.logger.log(`Fetching RedX label for: ${trackingId}`);
+    const client = this.buildClient(token);
+    try {
+      // Use the v4 PDF service endpoint derived from the dashboard
+      const { data } = await client.get(`https://api.redx.com.bd/v4/logistics/pdf-service/parcel/${trackingId}`, {
+        baseURL: '' // override to absolute URL
+      });
+      return { pdfJson: data };
+    } catch (err: any) {
+      this.logger.error(`RedX label fetch failed: ${err?.message}`);
+
+      // Fallback for Sandbox / Error testing
+      if (this.baseUrl.includes('sandbox.redx.com.bd') || !this.configService.get('REDX_BASE_URL')) {
+        this.logger.warn(`Fallback triggered for RedX label fetch: returning mock URL for ${trackingId}`);
+        return {
+          url: `https://redx.com.bd/parcel/track/${trackingId}`, // Fallback mock link
+        };
+      }
+
+      // Production v4 PDF Service link derived from RedX dashboard network logs
+      this.logger.log(`Returning RedX v4 PDF Service URL for ${trackingId}`);
+      return {
+        url: `https://api.redx.com.bd/v4/logistics/pdf-service/parcel/${trackingId}`,
+      };
+    }
+  }
+
+  /**
+   * Bulk generate parcels for RedX.
+   */
+  async createBulkParcels(parcels: any[], token: string): Promise<any> {
+    this.logger.log(`Creating ${parcels.length} bulk RedX parcels`);
+    const client = this.buildClient(token);
+    try {
+      const { data } = await client.post(`/parcel/bulk`, { parcels });
+      return data;
+    } catch (err: any) {
+      this.logger.error(`RedX bulk creation failed: ${err?.message}`);
+      throw new InternalServerErrorException('Failed to create bulk parcels in RedX.');
+    }
+  }
+  // ─── Public: Cost Calculation ─────────────────────────────────────────────
+
+  /**
+   * Calculate exact delivery charges for AI quoting.
+   */
+  async calculateCharge(
+    delivery_area_id: number,
+    parcel_weight: number,
+    token: string
+  ): Promise<any> {
+    this.logger.log(`Calculating RedX charge for area: ${delivery_area_id}, weight: ${parcel_weight}`);
+    const client = this.buildClient(token);
+    try {
+      // Typically takes delivery_area_id and parcel_weight
+      const { data } = await client.get(`/charge/charge_calculator`, {
+        params: {
+          delivery_area_id,
+          parcel_weight
+        }
+      });
+      return data;
+    } catch (err: any) {
+      this.logger.error(`RedX charge calculation failed: ${err?.message}`);
+      throw new InternalServerErrorException('Failed to calculate delivery charge.');
+    }
+  }
+
+  // ─── Public: Pickup & Store Management ────────────────────────────────────
+
+  /**
+   * List merchant's registered pickup locations in RedX.
+   */
+  async getPickupStores(token: string): Promise<any> {
+    this.logger.log('Fetching RedX pickup stores');
+    const client = this.buildClient(token);
+    try {
+      const { data } = await client.get('/pickup/stores');
+      return data?.pickup_stores || [];
+    } catch (err: any) {
+      this.logger.error(`RedX pickup stores fetch failed: ${err?.message}`);
+      throw new InternalServerErrorException('Failed to fetch pickup stores.');
+    }
+  }
+
+  /**
+   * Create a new pickup location in RedX.
+   */
+  async createPickupStore(payload: any, token: string): Promise<any> {
+    this.logger.log('Creating RedX pickup store');
+    const client = this.buildClient(token);
+    try {
+      const { data } = await client.post('/pickup/store', payload);
+      return data;
+    } catch (err: any) {
+      this.logger.error(`RedX create pickup store failed: ${err?.message}`);
+      throw new InternalServerErrorException('Failed to create pickup store.');
     }
   }
 }

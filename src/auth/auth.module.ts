@@ -9,6 +9,7 @@ import { DatabaseModule } from '../database/database.module';
 import { EmailModule } from '../email/email.module';
 import { SystemConfigModule } from '../superadmin/system-config.module';
 import { UploadModule } from '../upload/upload.module';
+import { FacebookModule } from '../facebook/facebook.module';
 
 @Module({
   imports: [
@@ -25,9 +26,10 @@ import { UploadModule } from '../upload/upload.module';
     EmailModule,
     SystemConfigModule,
     UploadModule,
+    FacebookModule,
   ],
   providers: [AuthService, JwtStrategy],
   controllers: [AuthController],
-  exports: [AuthService],
+  exports: [AuthService, JwtModule],
 })
 export class AuthModule { }

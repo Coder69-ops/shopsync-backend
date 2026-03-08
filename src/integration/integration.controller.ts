@@ -9,13 +9,6 @@ export class IntegrationController {
     constructor(private readonly integrationService: IntegrationService) { }
 
     @UseGuards(JwtAuthGuard)
-    @Post('woocommerce/connect')
-    async connectWooCommerce(@Request() req: any, @Body() dto: ConnectWooCommerceDto) {
-        const shopId = req.user.shopId;
-        return this.integrationService.connectWooCommerce(shopId, dto);
-    }
-
-    @UseGuards(JwtAuthGuard)
     @Get('shopify/auth')
     async shopifyAuth(@Request() req: any, @Query('shopDomain') shopDomain: string) {
         if (!shopDomain) throw new BadRequestException('shopDomain is required');

@@ -87,7 +87,17 @@ async function bootstrap() {
     serverAdapter: serverAdapter,
   });
 
-  app.use('/admin/queues', serverAdapter.getRouter());
+  const basicAuth = require('express-basic-auth');
+  app.use(
+    '/admin/queues',
+    basicAuth({
+      users: {
+        [process.env.BULL_BOARD_USER || 'admin']: process.env.BULL_BOARD_PASSWORD || 'ShopSync!@#2026',
+      },
+      challenge: true,
+    }),
+    serverAdapter.getRouter()
+  );
 
   await app.listen(process.env.PORT ?? 3000, '0.0.0.0');
 }

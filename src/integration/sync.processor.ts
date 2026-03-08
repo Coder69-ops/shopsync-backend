@@ -4,13 +4,12 @@ import { Job } from 'bullmq';
 import { DatabaseService } from '../database/database.service';
 import { EmbeddingsService } from './embeddings.service';
 import axios from 'axios';
-import * as crypto from 'crypto';
 import { Prisma } from '@prisma/client';
+import { decrypt } from '../common/utils/encryption.util';
 
 @Processor('sync-queue')
 export class SyncProcessor extends WorkerHost {
     private readonly logger = new Logger(SyncProcessor.name);
-    private readonly ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || '12345678901234567890123456789012';
 
     constructor(
         private readonly db: DatabaseService,
@@ -19,15 +18,7 @@ export class SyncProcessor extends WorkerHost {
         super();
     }
 
-    private decrypt(text: string): string {
-        const textParts = text.split(':');
-        const iv = Buffer.from(textParts.shift() as string, 'hex');
-        const encryptedText = Buffer.from(textParts.join(':'), 'hex');
-        const decipher = crypto.createDecipheriv('aes-256-cbc', Buffer.from(this.ENCRYPTION_KEY), iv);
-        let decrypted = decipher.update(encryptedText);
-        decrypted = Buffer.concat([decrypted, decipher.final()]);
-        return decrypted.toString();
-    }
+
 
     async process(job: Job<any, any, string>): Promise<any> {
         const { shopId, platform } = job.data;
@@ -37,13 +28,21 @@ export class SyncProcessor extends WorkerHost {
             const shop = await this.db.shop.findUnique({ where: { id: shopId } });
             if (!shop || !shop.platformIds) throw new Error('Shop credentials not found');
 
-            const platformData = (shop.platformIds as any)[platform.toLowerCase()];
-            if (!platformData) throw new Error(`Platform data missing for ${platform}`);
-
             if (platform === 'WOOCOMMERCE') {
-                await this.syncWooCommerce(shopId, platformData);
+                const credentials = {
+                    url: shop.wooCommerceUrl || (shop.platformIds as any)?.woocommerce?.url,
+                    consumerKey: shop.wooCommerceKey || (shop.platformIds as any)?.woocommerce?.consumerKey,
+                    consumerSecret: shop.wooCommerceSecret || (shop.platformIds as any)?.woocommerce?.consumerSecret,
+                };
+                if (!credentials.url || !credentials.consumerKey) throw new Error('WooCommerce credentials missing');
+                await this.syncWooCommerce(shopId, credentials);
             } else if (platform === 'SHOPIFY') {
-                await this.syncShopify(shopId, platformData);
+                const credentials = {
+                    shopDomain: shop.shopifyUrl?.replace(/^https?:\/\//, '') || (shop.platformIds as any)?.shopify?.shopDomain,
+                    accessToken: shop.shopifyAccessToken || (shop.platformIds as any)?.shopify?.accessToken,
+                };
+                if (!credentials.shopDomain || !credentials.accessToken) throw new Error('Shopify credentials missing');
+                await this.syncShopify(shopId, credentials);
             }
 
             this.logger.log(`Completed bulk sync for Shop ${shopId}`);
@@ -55,8 +54,8 @@ export class SyncProcessor extends WorkerHost {
 
     private async syncWooCommerce(shopId: string, credentials: any) {
         const { url, consumerKey, consumerSecret } = credentials;
-        const decryptedKey = this.decrypt(consumerKey);
-        const decryptedSecret = this.decrypt(consumerSecret);
+        const decryptedKey = decrypt(consumerKey);
+        const decryptedSecret = decrypt(consumerSecret);
 
         let page = 1;
         let hasMore = true;
@@ -93,7 +92,7 @@ export class SyncProcessor extends WorkerHost {
 
     private async syncShopify(shopId: string, credentials: any) {
         const { shopDomain, accessToken } = credentials;
-        const decryptedToken = this.decrypt(accessToken);
+        const decryptedToken = decrypt(accessToken);
 
         let url: string | null = `https://${shopDomain}/admin/api/2024-04/products.json?limit=250`;
 

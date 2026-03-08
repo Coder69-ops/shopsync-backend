@@ -3,7 +3,9 @@ import { DatabaseService } from '../database/database.service';
 
 @Injectable()
 export class SuperAdminService {
-  constructor(private readonly db: DatabaseService) { }
+  constructor(
+    private readonly db: DatabaseService,
+  ) { }
 
   async getAllShops(search?: string) {
     const where: any = {};
@@ -173,65 +175,35 @@ export class SuperAdminService {
     });
   }
 
-  async generateEmailTemplates(prompt: string) {
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      throw new Error('GEMINI_API_KEY is not configured');
-    }
+  async getEmailPresets() {
+    return this.db.emailPreset.findMany({
+      orderBy: { createdAt: 'asc' },
+    });
+  }
 
-    try {
-      const { GoogleGenerativeAI } = await import('@google/generative-ai');
-      const genAI = new GoogleGenerativeAI(apiKey);
-      const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+  async applyEmailPreset(id: string, adminId: string) {
+    const preset = await this.db.emailPreset.findUnique({
+      where: { id },
+    });
 
-      const requestPrompt = `
-You are an expert copywriter and UI designer. The user wants to generate email subjects, HTML body templates, and a matching Global HTML Wrapper for their e-commerce system.
-User Request: "${prompt}"
+    if (!preset) throw new Error('Preset not found');
 
-Available variables you can use in individual bodies (do NOT use in subjects):
-- #SHOP_NAME# (The name of the shop)
-- #ACTION_BUTTON# (A button for the user to click - use this token exactly)
-- #PRODUCT# (For low stock alerts, the product name)
-- #TOTAL# (For order alerts, the order total)
-- #ID# (For order alerts, the order ID)
-- #EMAIL# (For admin alerts, the new shop's email)
-- #ITEMS# (For order alerts, a formatted list of purchased items)
+    const updated = await this.db.systemConfig.update({
+      where: { id: 'global_config' },
+      data: {
+        globalEmailTemplate: preset.globalEmailTemplate,
+        welcomeEmailSubject: preset.welcomeEmailSubject,
+        welcomeEmailBody: preset.welcomeEmailBody,
+        newOrderEmailSubject: preset.newOrderEmailSubject,
+        newOrderEmailBody: preset.newOrderEmailBody,
+        lowStockEmailSubject: preset.lowStockEmailSubject,
+        lowStockEmailBody: preset.lowStockEmailBody,
+        adminAlertEmailSubject: preset.adminAlertEmailSubject,
+        adminAlertEmailBody: preset.adminAlertEmailBody,
+      },
+    });
 
-For the "globalEmailTemplate" (the wrapper), you MUST include:
-- #CONTENT# (Where the individual email body will be injected)
-- #LOGO_URL# (Placeholder for shop logo)
-- #YEAR# (Current year)
-- #DASHBOARD_URL# (Link to the dashboard)
-- #SHOP_NAME# (Shop name in footer/header)
-
-Return ONLY a valid JSON object with the following keys. The bodies should be rich, professional HTML with inline styles. Use a design that matches the user's prompt (e.g., modern, minimal, corporate, etc.).
-
-{
-  "welcomeEmailSubject": "...",
-  "welcomeEmailBody": "...",
-  "newOrderEmailSubject": "...",
-  "newOrderEmailBody": "...",
-  "lowStockEmailSubject": "...",
-  "lowStockEmailBody": "...",
-  "adminAlertEmailSubject": "...",
-  "adminAlertEmailBody": "...",
-  "globalEmailTemplate": "...(The full HTML wrapper including <html>, <head>, <body> tags and the #CONTENT# token)..."
-}
-
-Ensure the HTML is clean and compatible with most email clients. Do not include markdown codeblocks (\`\`\`json) in your response, just the raw JSON.`;
-
-      const result = await model.generateContent({
-        contents: [{ role: 'user', parts: [{ text: requestPrompt }] }],
-        generationConfig: {
-          temperature: 0.7,
-          responseMimeType: "application/json",
-        }
-      });
-      const responseText = result.response.text();
-      return JSON.parse(responseText);
-    } catch (error) {
-      console.error('Failed to generate templates:', error);
-      throw new Error('Failed to generate email templates using AI');
-    }
+    await this.logAction(adminId, 'APPLY_EMAIL_PRESET', id, { name: preset.name });
+    return updated;
   }
 }

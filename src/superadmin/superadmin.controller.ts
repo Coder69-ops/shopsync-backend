@@ -49,12 +49,14 @@ export class SuperAdminController {
     return this.systemConfigService.testAiConnection(body.provider, body.model, body.apiKey);
   }
 
-  @Post('generate-email-templates')
-  async generateEmailTemplates(@Body('prompt') prompt: string) {
-    if (!prompt) {
-      throw new BadRequestException('Prompt is required');
-    }
-    return this.superAdminService.generateEmailTemplates(prompt);
+  @Get('email-presets')
+  async getEmailPresets() {
+    return this.superAdminService.getEmailPresets();
+  }
+
+  @Post('apply-preset/:id')
+  async applyPreset(@CurrentUser() admin: User, @Param('id') id: string) {
+    return this.superAdminService.applyEmailPreset(id, admin.id);
   }
 
   @Get('shops')

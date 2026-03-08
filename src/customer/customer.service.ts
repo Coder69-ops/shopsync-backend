@@ -5,20 +5,50 @@ import { DatabaseService } from '../database/database.service';
 export class CustomerService {
   constructor(private readonly db: DatabaseService) { }
 
-  async findAll(shopId: string) {
-    return this.db.customer.findMany({
-      where: { shopId },
-      include: {
-        _count: {
-          select: { orders: true },
+  async findAll(shopId: string, page: number = 1, limit: number = 20) {
+    const skip = (page - 1) * limit;
+
+    const [customers, total] = await Promise.all([
+      this.db.customer.findMany({
+        where: { shopId },
+        include: {
+          _count: {
+            select: { orders: true },
+          },
+          orders: {
+            orderBy: { createdAt: 'desc' },
+          },
         },
-        orders: {
-          orderBy: { createdAt: 'desc' },
-          take: 1, // Last order
-        },
-      },
-      orderBy: { updatedAt: 'desc' },
+        orderBy: { updatedAt: 'desc' },
+        skip,
+        take: limit,
+      }),
+      this.db.customer.count({ where: { shopId } }),
+    ]);
+
+    const formattedCustomers = customers.map((customer) => {
+      const spent = customer.orders
+        .filter((o: any) => o.status !== 'CANCELLED')
+        .reduce((sum: number, o: any) => sum + Number(o.totalPrice || 0), 0);
+
+      const lastOrder = customer.orders.length > 0 ? [customer.orders[0]] : [];
+
+      return {
+        ...customer,
+        orders: lastOrder,
+        spent,
+      };
     });
+
+    return {
+      data: formattedCustomers,
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
   }
 
   async findOne(id: string, shopId: string) {
@@ -84,6 +114,7 @@ export class CustomerService {
       lastMonthCustomers,
       repeatsData,
       withOrdersCount,
+      revenueResult,
     ] = await Promise.all([
       this.db.customer.count({ where: { shopId } }),
       this.db.customer.count({
@@ -123,10 +154,16 @@ export class CustomerService {
           customerId: { not: null },
         },
       }),
+      // Aggregate total revenue for the shop
+      this.db.order.aggregate({
+        where: { shopId, status: { not: 'CANCELLED' } },
+        _sum: { totalPrice: true }
+      }),
     ]);
 
     const repeats = repeatsData.length;
     const withOrders = withOrdersCount.length;
+    const totalRevenue = Number(revenueResult._sum.totalPrice || 0);
 
     const growthRate =
       lastMonthCustomers > 0
@@ -141,6 +178,8 @@ export class CustomerService {
       growthRate,
       repeatCustomers: repeats,
       retentionRate: withOrders > 0 ? (repeats / withOrders) * 100 : 0,
+      totalRevenue,
+      avgLtv: withOrders > 0 ? totalRevenue / withOrders : 0,
     };
   }
 }

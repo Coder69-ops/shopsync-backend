@@ -8,9 +8,13 @@ import { CustomerModule } from '../customer/customer.module';
 import { UsageModule } from '../usage/usage.module';
 import { RedxModule } from '../redx/redx.module';
 import { EmailModule } from '../email/email.module';
+import { WooCommerceModule } from '../woocommerce/woocommerce.module';
+import { ShopifyModule } from '../shopify/shopify.module';
+
+import { AiModule } from '../ai/ai.module';
 
 @Module({
-  imports: [DatabaseModule, CourierModule, FacebookModule, CustomerModule, UsageModule, EmailModule, forwardRef(() => RedxModule)],
+  imports: [DatabaseModule, CourierModule, FacebookModule, CustomerModule, UsageModule, EmailModule, forwardRef(() => RedxModule), forwardRef(() => WooCommerceModule), forwardRef(() => ShopifyModule), forwardRef(() => AiModule)],
   controllers: [OrderController],
   providers: [OrderService],
   exports: [OrderService],

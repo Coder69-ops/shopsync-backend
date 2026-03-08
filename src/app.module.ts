@@ -32,6 +32,9 @@ import { BlogModule } from './blog/blog.module';
 import { KnowledgeBaseModule } from './knowledge-base/knowledge-base.module';
 import { RedxModule } from './redx/redx.module';
 import { IntegrationModule } from './integration/integration.module';
+import { InboxModule } from './inbox/inbox.module';
+import { WooCommerceModule } from './woocommerce/woocommerce.module';
+import { ShopifyModule } from './shopify/shopify.module';
 
 @Module({
   imports: [
@@ -39,12 +42,30 @@ import { IntegrationModule } from './integration/integration.module';
     ScheduleModule.forRoot(),
     BullModule.forRootAsync({
       imports: [ConfigModule],
-      useFactory: (configService: ConfigService) => ({
-        connection: {
-          host: configService.get('REDIS_HOST') || 'localhost',
-          port: configService.get('REDIS_PORT') || 6379,
-        },
-      }),
+      useFactory: (configService: ConfigService) => {
+        const redisUrl = configService.get('REDIS_URL');
+        let connectionConfig: any = {};
+
+        if (redisUrl) {
+          const url = new URL(redisUrl);
+          connectionConfig = {
+            host: url.hostname,
+            port: url.port ? parseInt(url.port, 10) : 6379,
+            password: url.password || undefined,
+            username: url.username || undefined,
+          };
+        } else {
+          connectionConfig = {
+            host: configService.get('REDIS_HOST') || 'localhost',
+            port: configService.get('REDIS_PORT') || 6379,
+            password: configService.get('REDIS_PASSWORD') || undefined,
+          };
+        }
+
+        return {
+          connection: connectionConfig,
+        };
+      },
       inject: [ConfigService],
     }),
     WebhookModule,
@@ -73,6 +94,9 @@ import { IntegrationModule } from './integration/integration.module';
     KnowledgeBaseModule,
     RedxModule,
     IntegrationModule,
+    InboxModule,
+    WooCommerceModule,
+    ShopifyModule,
   ],
   controllers: [AppController],
   providers: [

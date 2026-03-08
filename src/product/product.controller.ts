@@ -63,8 +63,12 @@ export class ProductController {
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard)
   @Get()
-  findAll(@CurrentUser('shopId') shopId: string) {
-    return this.productService.findAll(shopId);
+  findAll(
+    @CurrentUser('shopId') shopId: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.productService.findAll(shopId, Number(page) || 1, Number(limit) || 20);
   }
 
   @ApiBearerAuth()

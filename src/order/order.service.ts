@@ -13,6 +13,10 @@ import { RedxService } from '../redx/redx.service';
 import { PushToCourierDto } from './dto/push-to-courier.dto';
 import { PushToRedxDto } from './dto/push-to-redx.dto';
 import { EmailService } from '../email/email.service';
+import { WooCommerceService } from '../woocommerce/woocommerce.service';
+import { ShopifyService } from '../shopify/shopify.service';
+import { AiService } from '../ai/ai.service';
+import { forwardRef, Inject } from '@nestjs/common';
 import * as crypto from 'crypto';
 
 @Injectable()
@@ -27,6 +31,9 @@ export class OrderService {
     private readonly usageService: UsageService,
     private readonly redxService: RedxService,
     private readonly emailService: EmailService,
+    @Inject(forwardRef(() => WooCommerceService)) private readonly wooCommerceService: WooCommerceService,
+    @Inject(forwardRef(() => ShopifyService)) private readonly shopifyService: ShopifyService,
+    @Inject(forwardRef(() => AiService)) private readonly aiService: AiService,
   ) { }
 
   async create(data: any, shopId: string) {
@@ -40,8 +47,9 @@ export class OrderService {
         totalPrice: data.totalPrice,
         status: data.status,
         psid: data.psid,
+        customerId: data.customerId,
         rawExtract: data,
-        source: data.source || 'MANUAL',
+        source: ['MANUAL', 'AI', 'WEB'].includes(data.source) ? data.source : 'MANUAL',
       },
       shopId,
     );
@@ -55,7 +63,7 @@ export class OrderService {
     const deliveryOutside = Number(aiConfig.deliveryChargeOutside) || 150;
 
     // NEW: Check Order Limit
-    const canCreateOrder = await this.usageService.canCreateOrder(shopId);
+    const canCreateOrder = await this.usageService.canCreateOrder(shopId, shop);
     if (!canCreateOrder) {
       throw new Error(
         'Your monthly order limit has been reached. Please upgrade to continue.',
@@ -109,7 +117,7 @@ export class OrderService {
           if (product.stock >= item.quantity) {
             await tx.product.update({
               where: { id: product.id },
-              data: { stock: product.stock - item.quantity },
+              data: { stock: { decrement: item.quantity } },
             });
           }
 
@@ -138,11 +146,11 @@ export class OrderService {
         typeof itemsString === 'string' ? JSON.parse(itemsString) : itemsString;
       if (Array.isArray(parsed)) {
         orderItemsData = parsed.map((i) => ({
-          productId: i.productId || null,
+          product: i.productId ? { connect: { id: i.productId } } : undefined,
           name: i.name || i.product_name || 'Generic Item',
-          quantity: i.quantity || 1,
-          unitPrice: i.unitPrice || 0,
-          total: i.total || 0,
+          quantity: Number(i.quantity) || 1,
+          unitPrice: Number(i.unitPrice) || Number(i.price) || 0,
+          total: Number(i.total) || ((Number(i.unitPrice) || Number(i.price) || 0) * (Number(i.quantity) || 1)),
         }));
       }
     } catch (e) {
@@ -157,6 +165,9 @@ export class OrderService {
     }
 
     // 2. Create Order in DB
+    const finalDeliveryFee = data.deliveryFee !== undefined ? Number(data.deliveryFee) : deliveryCharge;
+    const finalSubTotal = data.subTotal !== undefined ? Number(data.subTotal) : (totalPrice > finalDeliveryFee ? totalPrice - finalDeliveryFee : 0);
+
     const order = await this.db.order.create({
       data: {
         id: crypto.randomUUID(),
@@ -168,9 +179,12 @@ export class OrderService {
           create: orderItemsData,
         },
         totalPrice: totalPrice,
+        subTotal: finalSubTotal,
+        deliveryFee: finalDeliveryFee,
+        customerId: data.customerId || undefined,
         rawExtract: { ...data, deliveryChargeApplied: deliveryCharge },
         status: 'CONFIRMED',
-        source: data.source || 'AI',
+        source: ['MANUAL', 'AI', 'WEB'].includes(data.source) ? data.source : 'AI',
         appointmentDate:
           data.appointmentDate || data.appointment_date
             ? new Date(data.appointmentDate || data.appointment_date)
@@ -180,7 +194,9 @@ export class OrderService {
     });
 
     // 1.5 Link to Customer (CRM)
-    if (data.psid) {
+    let finalCustomerId = data.customerId;
+
+    if (!finalCustomerId && data.psid) {
       try {
         const customer = await this.customerService.findOrCreate(
           shopId,
@@ -188,6 +204,7 @@ export class OrderService {
           data.name,
           data.email || data.customerEmail || data.customer_email,
         );
+        finalCustomerId = customer.id;
         await this.db.order.update({
           where: { id: order.id },
           data: { customerId: customer.id },
@@ -201,12 +218,46 @@ export class OrderService {
       // Optional: Implementation for phone-based linking could go here
     }
 
+    // 1.6 Marketing ROI Attribution
+    if (finalCustomerId) {
+      try {
+        const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+        const recentCampaign = await this.db.campaignRecipient.findFirst({
+          where: {
+            customerId: finalCustomerId,
+            status: { in: ['SENT', 'DELIVERED'] },
+            updatedAt: { gte: twentyFourHoursAgo }
+          },
+          orderBy: { updatedAt: 'desc' }
+        });
+
+        if (recentCampaign) {
+          await this.db.order.update({
+            where: { id: order.id },
+            data: { marketingCampaignId: recentCampaign.campaignId }
+          });
+
+          await this.db.campaign.update({
+            where: { id: recentCampaign.campaignId },
+            data: {
+              ordersCount: { increment: 1 },
+              revenueGenerated: { increment: totalPrice }
+            }
+          });
+          this.logger.log(`Order ${order.id} attributed to Campaign ${recentCampaign.campaignId}`);
+        }
+      } catch (e) {
+        this.logger.error('Failed to attribute order to marketing campaign', e);
+      }
+    }
+
     // 2. Check Plan Permission for Courier (Pro Only)
     // Re-fetching shop here to be safe, or we could pass it down.
     // For efficiency, we already fetched shop at start of this method (line 39).
     const canUseCourier = await this.usageService.hasFeatureAccess(
       shopId,
       'canUseCourier',
+      shop
     );
 
     if (canUseCourier) {
@@ -246,6 +297,36 @@ export class OrderService {
         this.logger.warn(`Failed to send customer order confirmation: ${err.message}`),
       );
     }
+
+    // 6. External Platform Sync (Two-Way Sync)
+    // We do this non-blocking
+    setTimeout(async () => {
+      try {
+        const orderWithFullItems = await this.db.order.findUnique({
+          where: { id: order.id },
+          include: {
+            orderItems: { include: { product: true } },
+            customer: true,
+            shop: true,
+          }
+        });
+
+        if (orderWithFullItems && orderWithFullItems.shop) {
+          const wcid = await this.wooCommerceService.pushOrder(orderWithFullItems.shop, orderWithFullItems, orderWithFullItems.orderItems);
+          const shid = await this.shopifyService.pushOrder(orderWithFullItems.shop, orderWithFullItems, orderWithFullItems.orderItems);
+
+          const externalId = wcid || shid;
+          if (externalId) {
+            await this.db.order.update({
+              where: { id: order.id },
+              data: { externalOrderId: String(externalId) }
+            });
+          }
+        }
+      } catch (e: any) {
+        this.logger.error(`Failed external sync for order ${order.id}: ${e.message}`);
+      }
+    }, 0);
 
     return order;
   }
@@ -326,11 +407,12 @@ export class OrderService {
    */
   async updateOrderStatusByTrackingId(
     trackingId: string,
-    status: string,
+    status?: string,
+    shipmentStatus?: string,
   ): Promise<void> {
     const order = await this.db.order.findFirst({
       where: { trackingId },
-      select: { id: true, status: true },
+      select: { id: true, status: true, rawExtract: true },
     });
 
     if (!order) {
@@ -342,7 +424,10 @@ export class OrderService {
 
     await this.db.order.update({
       where: { id: order.id },
-      data: { status: status as any },
+      data: {
+        ...(status && { status: status as any }),
+        ...(shipmentStatus && { shipmentStatus }),
+      },
     });
 
     // 2. Notify Customer if confirmed
@@ -365,6 +450,63 @@ export class OrderService {
     this.logger.log(
       `Order ${order.id} updated to ${status} via RedX webhook (tracking=${trackingId})`,
     );
+
+    // 3. Proactive Messenger Follow-up for 'Hold' or 'Return' status
+    if (
+      shipmentStatus === 'hold-at-delivery-hub' ||
+      shipmentStatus === 'agent-hold' ||
+      shipmentStatus === 'return-in-transit' ||
+      shipmentStatus === 'returned'
+    ) {
+      const orderWithShop = await this.db.order.findUnique({
+        where: { id: order.id },
+        include: { shop: true }
+      });
+
+      const rawData = order.rawExtract as any;
+      if (orderWithShop?.shop && rawData?.psid) {
+        let situationalPrompt = '';
+        if (shipmentStatus.includes('hold')) {
+          situationalPrompt = `The customer's parcel (${trackingId}) is currently on hold at the delivery hub. The customer may be waiting for an update. Write a short, friendly, and helpful proactive message (1-2 sentences) in the shop's tone to send to the customer via Messenger. Emphasize that we are monitoring their order and working to resolve the hold.`;
+        } else if (shipmentStatus.includes('return')) {
+          situationalPrompt = `The customer's parcel (${trackingId}) has been returned by the courier. The customer might be disappointed. Write a polite, empathetic proactive message (1-2 sentences) in the shop's tone to notify the customer via Messenger. Let them know we can assist them if they still want the product.`;
+        }
+
+        try {
+          const systemPrompt = await this.aiService.buildSystemPrompt(orderWithShop.shop as any, 'chat', 'Order update notification');
+          const enrichedPrompt = `${systemPrompt}\n\n### PROACTIVE NOTIFICATION TASK\n${situationalPrompt}\n\nYou must act as the AI assistant and generate the response. Write ONLY a JSON object in this format:\n{"intent": "GENERAL_QUERY", "reply_message": "your proactive message here"}\n`;
+
+          const aiResponse = await this.aiService.callAi(
+            enrichedPrompt,
+            [],
+            'Generate proactive notification',
+            undefined,
+            true
+          );
+
+          if (aiResponse?.reply_message) {
+            await this.facebookService.sendMessage(
+              rawData.psid,
+              aiResponse.reply_message,
+              orderWithShop.shop.accessToken || ''
+            ).catch(err => this.logger.error(`Failed to send proactive message: ${err.message}`));
+          } else {
+            throw new Error('AI returned empty proactive message');
+          }
+        } catch (aiErr) {
+          this.logger.error(`Failed to generate proactive AI response: ${aiErr.message}`);
+          let fallbackMessage = `⚠️ Delivery Update: Your parcel (${trackingId}) is currently on hold. Our team is working to resolve this.`;
+          if (shipmentStatus.includes('return')) {
+            fallbackMessage = `🚚 Delivery Update: Your parcel (${trackingId}) has been returned by the courier. Please contact us if you need further assistance.`;
+          }
+          await this.facebookService.sendMessage(
+            rawData.psid,
+            fallbackMessage,
+            orderWithShop.shop.accessToken || ''
+          ).catch(err => this.logger.error(`Failed to send proactive fallback message: ${err.message}`));
+        }
+      }
+    }
   }
 
   async update(id: string, data: any, shopId: string) {

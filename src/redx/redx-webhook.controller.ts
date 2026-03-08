@@ -22,6 +22,18 @@ import { RedxWebhookDto } from './redx-webhook.dto';
 const REDX_STATUS_MAP: Record<string, string> = {
   delivered: 'DELIVERED',
   returned: 'RETURNED',
+  cancelled: 'CANCELLED',
+  'pickup-pending': 'SHIPPED',
+  'pickup-rescheduled': 'SHIPPED',
+  'received-at-pickup-hub': 'SHIPPED',
+  'in-transit': 'SHIPPED',
+  'received-at-delivery-hub': 'SHIPPED',
+  'out-for-delivery': 'SHIPPED',
+  'delivery-rescheduled': 'SHIPPED',
+  'hold-at-delivery-hub': 'SHIPPED',
+  'return-in-transit': 'SHIPPED',
+  'received-at-return-hub': 'SHIPPED',
+  'agent-hold': 'SHIPPED',
 };
 
 @Controller('webhooks/redx')
@@ -32,7 +44,7 @@ export class RedxWebhookController {
     @Inject(forwardRef(() => OrderService))
     private readonly orderService: OrderService,
     private readonly configService: ConfigService,
-  ) {}
+  ) { }
 
   /**
    * POST /webhooks/redx?token=<REDX_WEBHOOK_SECRET>
@@ -71,21 +83,17 @@ export class RedxWebhookController {
       `RedX webhook received: tracking=${trackingNumber} status="${redxStatus}"`,
     );
 
-    // ── 2. Map to internal status ─────────────────────────────────────────────
+    // ── 2. Determine mapped status ───────────────────────────────────────────
     const internalStatus = REDX_STATUS_MAP[redxStatus];
-    if (!internalStatus) {
-      // Intermediate status — acknowledge without touching DB
-      this.logger.log(
-        `RedX webhook: ignoring intermediate status "${redxStatus}"`,
-      );
-      return { success: true, message: `status "${redxStatus}" acknowledged` };
-    }
 
-    // ── 3. Update order via OrderService ─────────────────────────────────────
+    // ── 3. Always update shipmentStatus (granular) ───────────────────────────
     await this.orderService.updateOrderStatusByTrackingId(
       trackingNumber,
-      internalStatus,
+      internalStatus, // may be undefined for intermediate statuses
+      dto.status, // raw RedX status (e.g. "pickup-pending")
     );
+
+    return { success: true };
 
     return { success: true };
   }

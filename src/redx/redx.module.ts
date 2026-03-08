@@ -5,10 +5,12 @@ import { RedxWebhookController } from './redx-webhook.controller';
 import { DatabaseModule } from '../database/database.module';
 import { OrderModule } from '../order/order.module';
 
+import { RedxController } from './redx.controller';
+
 @Module({
   imports: [ConfigModule, DatabaseModule, forwardRef(() => OrderModule)],
-  controllers: [RedxWebhookController],
+  controllers: [RedxWebhookController, RedxController],
   providers: [RedxService],
   exports: [RedxService],
 })
-export class RedxModule {}
+export class RedxModule { }
