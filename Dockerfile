@@ -3,16 +3,14 @@ FROM node:22-alpine AS builder
 
 WORKDIR /app
 
+# Copy package files first for better caching
 COPY package*.json ./
 COPY prisma ./prisma/
 
-RUN rm -f package-lock.json
-RUN npm install
+# Use npm ci for reproducible builds (requires package-lock.json)
+RUN npm ci
 
 COPY . .
-
-# Force cache invalidation to ensure Prisma schema and migrations are picked up
-RUN echo "Cache Bust 2026-02-17-v4"
 
 RUN npx prisma generate
 RUN npm run build
