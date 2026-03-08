@@ -97,24 +97,25 @@ export class AiService {
 
   public async callAi(
     systemPrompt: string,
-    history: { role: 'user' | 'assistant'; content: string }[],
+    history: { role: 'user' | 'assistant'; content: string; shipping_details?: any }[],
     userMessage: string,
     model?: string,
     jsonMode: boolean = true,
+    key?: string,
   ): Promise<any> {
     const config = await this.systemConfigService.getConfig();
 
     // Primary Configuration
     const activeModel = model || config.activeAiModel;
     const provider = config.aiProvider || 'GROQ';
-    const activeApiKey = config.aiApiKey || undefined;
+    const activeApiKey = key || config.aiApiKey || undefined;
 
     // Backup Configuration
     const backupModel = config.backupAiModel;
     const backupProvider = config.backupAiProvider;
     const backupApiKey = config.backupAiApiKey || undefined;
 
-    const executeProviderCall = async (p: string, m: string, key?: string) => {
+    const executeProviderCall = async (p: string, m: string, k?: string) => {
       switch (p) {
         case 'GOOGLE':
           return this.callGeminiApi(
@@ -123,7 +124,7 @@ export class AiService {
             userMessage,
             m,
             jsonMode,
-            key,
+            k,
           );
         case 'OPENROUTER':
           return this.callOpenRouterApi(
@@ -132,7 +133,7 @@ export class AiService {
             userMessage,
             m,
             jsonMode,
-            key,
+            k,
           );
         case 'GROQ':
         default:
@@ -142,7 +143,7 @@ export class AiService {
             userMessage,
             m,
             jsonMode,
-            key,
+            k,
           );
       }
     };
@@ -634,7 +635,7 @@ export class AiService {
       // 2. Generate AI Response via dynamic call
       const systemPrompt = await this.buildSystemPrompt(shop, 'chat', userMessage);
 
-      const aiResponse = await this.callAi(
+      let aiResponse = await this.callAi(
         systemPrompt,
         history,
         userMessage,
@@ -644,7 +645,16 @@ export class AiService {
 
       // Handle Logistics Tool-use (Intent Loop)
       if (aiResponse.intent === 'CHECK_SHIPPING' && shop.redxToken) {
-        return await this.processLogisticsIntent(aiResponse, shop, userMessage, history);
+        aiResponse = await this.processLogisticsIntent(aiResponse, shop, userMessage, history);
+      }
+
+      // PERSISTENCE FIX: If we are now creating an order, check if we had shipping details in history
+      if (aiResponse.intent === 'CREATE_ORDER') {
+        const lastLogisticsMsg: any = [...history].reverse().find((m: any) => (m as any).shipping_details);
+        if (lastLogisticsMsg?.shipping_details) {
+          aiResponse.shipping_details = lastLogisticsMsg.shipping_details;
+          this.logger.log(`Restored shipping details from history for order creation: ${JSON.stringify(aiResponse.shipping_details)}`);
+        }
       }
 
       if (aiResponse.intent === 'CHECK_STATUS') {

@@ -70,26 +70,18 @@ export class OrderService {
       );
     }
 
-    const deliveryCharge =
+    // Determine base delivery charge
+    const defaultDeliveryCharge =
       data.delivery_type === 'outside' ? deliveryOutside : deliveryInside;
-    let totalPrice = Number(data.totalPrice) || Number(data.total_price) || 0;
-    let itemsString = data.items;
 
-    // 1. Handle Inventory Extraction if items is an array
-    if (Array.isArray(data.items) && data.items.length > 0) {
-      const formattedItems: any[] = [];
-      let productTotal = 0;
+    // ATOMICITY FIX: Wrap everything in a transaction
+    const createdOrder = await this.db.$transaction(async (tx: any) => {
+      let productSubTotal = 0;
+      const orderItemsToCreate: any[] = [];
 
-      // Use transaction to ensure stock consistency
-      await this.db.$transaction(async (tx: any) => {
+      // 1. Handle Inventory & Product Total
+      if (Array.isArray(data.items) && data.items.length > 0) {
         for (const item of data.items) {
-          const productSelector = item.productId
-            ? { id: item.productId }
-            : {
-              shopId_sku: { shopId, sku: item.sku },
-            };
-
-          // If no product ID or SKU, try matching by name (fuzzy)
           const product = await tx.product.findFirst({
             where: item.productId
               ? { id: item.productId }
@@ -103,232 +95,218 @@ export class OrderService {
           });
 
           if (!product) {
-            this.logger.warn(
-              `Product not found during extraction: ${item.product_name}`,
-            );
+            this.logger.warn(`Product not found: ${item.product_name || item.name}`);
+            orderItemsToCreate.push({
+              name: item.product_name || item.name || 'Generic Item',
+              quantity: Number(item.quantity) || 1,
+              unitPrice: Number(item.unitPrice) || Number(item.price) || 0,
+              total: (Number(item.unitPrice) || Number(item.price) || 0) * (Number(item.quantity) || 1),
+            });
+            productSubTotal += (Number(item.unitPrice) || Number(item.price) || 0) * (Number(item.quantity) || 1);
             continue;
           }
 
-          if (product.stock < item.quantity) {
-            this.logger.warn(`Insufficient stock for ${product.name}`);
-          }
-
-          // Deduct Stock if possible
+          // Deduct Stock
           if (product.stock >= item.quantity) {
             await tx.product.update({
               where: { id: product.id },
               data: { stock: { decrement: item.quantity } },
             });
+          } else {
+            this.logger.warn(`Over-selling product ${product.name} (Stock: ${product.stock}, Req: ${item.quantity})`);
           }
 
-          formattedItems.push({
+          const unitPrice = Number(product.price);
+          const quantity = Number(item.quantity);
+          const itemTotal = unitPrice * quantity;
+
+          orderItemsToCreate.push({
             productId: product.id,
             name: product.name,
-            quantity: item.quantity,
-            unitPrice: product.price,
-            total: Number(product.price) * item.quantity,
+            quantity: quantity,
+            unitPrice: unitPrice,
+            total: itemTotal,
           });
-          productTotal += Number(product.price) * item.quantity;
+          productSubTotal += itemTotal;
         }
-      });
-
-      if (formattedItems.length > 0) {
-        itemsString = JSON.stringify(formattedItems); // Will be mapped later
-        // Correct Total Price: Products + Delivery
-        totalPrice = productTotal + deliveryCharge;
-      }
-    }
-
-    // Build OrderItems array
-    let orderItemsData: any[] = [];
-    try {
-      const parsed =
-        typeof itemsString === 'string' ? JSON.parse(itemsString) : itemsString;
-      if (Array.isArray(parsed)) {
-        orderItemsData = parsed.map((i) => ({
-          product: i.productId ? { connect: { id: i.productId } } : undefined,
-          name: i.name || i.product_name || 'Generic Item',
-          quantity: Number(i.quantity) || 1,
-          unitPrice: Number(i.unitPrice) || Number(i.price) || 0,
-          total: Number(i.total) || ((Number(i.unitPrice) || Number(i.price) || 0) * (Number(i.quantity) || 1)),
-        }));
-      }
-    } catch (e) {
-      orderItemsData = [
-        {
-          name: itemsString || 'Generic Item',
+      } else {
+        // Handle string/generic items
+        orderItemsToCreate.push({
+          name: typeof data.items === 'string' ? data.items : 'Generic Item',
           quantity: 1,
           unitPrice: 0,
           total: 0,
-        },
-      ];
-    }
+        });
+      }
 
-    // 2. Create Order in DB
-    const finalDeliveryFee = data.deliveryFee !== undefined ? Number(data.deliveryFee) : deliveryCharge;
-    const finalSubTotal = data.subTotal !== undefined ? Number(data.subTotal) : (totalPrice > finalDeliveryFee ? totalPrice - finalDeliveryFee : 0);
+      // 2. Finalize Pricing
+      // Priority: 1. data.deliveryFee (from AI) -> 2. defaultDeliveryCharge (from Shop Settings)
+      const finalDeliveryFee = data.deliveryFee !== undefined ? Number(data.deliveryFee) : defaultDeliveryCharge;
 
-    const order = await this.db.order.create({
-      data: {
-        id: crypto.randomUUID(),
-        shopId: shopId,
-        customerName: data.name || data.customer_name,
-        customerPhone: data.phone || data.customer_phone,
-        customerAddress: data.address || data.customer_address,
-        orderItems: {
-          create: orderItemsData,
+      // Subtotal is what we calculated from products.
+      const finalSubTotal = productSubTotal;
+
+      // Total Price is the sum.
+      const finalTotalPrice = finalSubTotal + finalDeliveryFee;
+
+      // 3. Create Order
+      const order = await tx.order.create({
+        data: {
+          id: crypto.randomUUID(),
+          shopId: shopId,
+          customerName: data.name || data.customer_name || 'Facebook User',
+          customerPhone: data.phone || data.customer_phone || '',
+          customerAddress: data.address || data.customer_address || 'Unknown Address',
+          orderItems: {
+            create: orderItemsToCreate.map(i => ({
+              product: i.productId ? { connect: { id: i.productId } } : undefined,
+              name: i.name,
+              quantity: i.quantity,
+              unitPrice: i.unitPrice,
+              total: i.total,
+            })),
+          },
+          totalPrice: finalTotalPrice,
+          subTotal: finalSubTotal,
+          deliveryFee: finalDeliveryFee,
+          customerId: data.customerId || undefined,
+          rawExtract: {
+            ...data,
+            deliveryChargeApplied: finalDeliveryFee,
+            calculatedSubTotal: finalSubTotal
+          },
+          status: 'CONFIRMED',
+          source: ['MANUAL', 'AI', 'WEB'].includes(data.source) ? data.source : 'AI',
+          appointmentDate: data.appointmentDate ? new Date(data.appointmentDate) : null,
+          serviceNotes: data.serviceNotes || null,
         },
-        totalPrice: totalPrice,
-        subTotal: finalSubTotal,
-        deliveryFee: finalDeliveryFee,
-        customerId: data.customerId || undefined,
-        rawExtract: { ...data, deliveryChargeApplied: deliveryCharge },
-        status: 'CONFIRMED',
-        source: ['MANUAL', 'AI', 'WEB'].includes(data.source) ? data.source : 'AI',
-        appointmentDate:
-          data.appointmentDate || data.appointment_date
-            ? new Date(data.appointmentDate || data.appointment_date)
-            : null,
-        serviceNotes: data.serviceNotes || data.service_notes || null,
-      },
+      });
+
+      // 4. Link Customer
+      if (!data.customerId && data.psid) {
+        try {
+          const customer = await this.customerService.findOrCreate(
+            shopId,
+            data.psid,
+            data.name,
+            data.email || data.customerEmail,
+          );
+          await tx.order.update({
+            where: { id: order.id },
+            data: { customerId: customer.id },
+          });
+          order.customerId = customer.id;
+        } catch (e) {
+          this.logger.error('Failed to link customer in transaction', e);
+        }
+      }
+
+      return order;
     });
 
-    // 1.5 Link to Customer (CRM)
-    let finalCustomerId = data.customerId;
-
-    if (!finalCustomerId && data.psid) {
-      try {
-        const customer = await this.customerService.findOrCreate(
-          shopId,
-          data.psid,
-          data.name,
-          data.email || data.customerEmail || data.customer_email,
-        );
-        finalCustomerId = customer.id;
-        await this.db.order.update({
-          where: { id: order.id },
-          data: { customerId: customer.id },
-        });
-      } catch (e) {
-        this.logger.error('Failed to link customer', e);
-      }
-    }
-    // Try linking by phone if no PSID
-    else if (data.phone) {
-      // Optional: Implementation for phone-based linking could go here
-    }
+    // --- Post-Creation Logic (Non-Atomic/Side-Effects) ---
 
     // 1.6 Marketing ROI Attribution
-    if (finalCustomerId) {
+    if (createdOrder.customerId) {
       try {
         const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
         const recentCampaign = await this.db.campaignRecipient.findFirst({
           where: {
-            customerId: finalCustomerId,
+            customerId: createdOrder.customerId,
             status: { in: ['SENT', 'DELIVERED'] },
-            updatedAt: { gte: twentyFourHoursAgo }
+            updatedAt: { gte: twentyFourHoursAgo },
           },
-          orderBy: { updatedAt: 'desc' }
+          orderBy: { updatedAt: 'desc' },
         });
 
         if (recentCampaign) {
           await this.db.order.update({
-            where: { id: order.id },
-            data: { marketingCampaignId: recentCampaign.campaignId }
+            where: { id: createdOrder.id },
+            data: { marketingCampaignId: recentCampaign.campaignId },
           });
 
           await this.db.campaign.update({
             where: { id: recentCampaign.campaignId },
             data: {
               ordersCount: { increment: 1 },
-              revenueGenerated: { increment: totalPrice }
-            }
+              revenueGenerated: { increment: createdOrder.totalPrice },
+            },
           });
-          this.logger.log(`Order ${order.id} attributed to Campaign ${recentCampaign.campaignId}`);
+          this.logger.log(
+            `Order ${createdOrder.id} attributed to Campaign ${recentCampaign.campaignId}`,
+          );
         }
       } catch (e) {
         this.logger.error('Failed to attribute order to marketing campaign', e);
       }
     }
 
-    // 2. Check Plan Permission for Courier (Pro Only)
-    // Re-fetching shop here to be safe, or we could pass it down.
-    // For efficiency, we already fetched shop at start of this method (line 39).
+    // 2. Courier Shipment
     const canUseCourier = await this.usageService.hasFeatureAccess(
       shopId,
       'canUseCourier',
-      shop
+      shop,
     );
-
     if (canUseCourier) {
       try {
-        const shipment = await this.courierService.createShipment(order);
-
-        // 3. Update Order with Tracking Info
+        const shipment = await this.courierService.createShipment(createdOrder);
         await this.db.order.update({
-          where: { id: order.id },
+          where: { id: createdOrder.id },
           data: {
             trackingId: shipment.trackingId,
             courierName: shipment.courier,
             shipmentStatus: shipment.status,
           },
         });
-        this.logger.log(
-          `Order ${order.id} updated with tracking ${shipment.trackingId}`,
-        );
       } catch (e) {
         this.logger.error('Failed to create shipment', e);
       }
-    } else {
-      this.logger.log(`Order ${order.id}: Auto-booking skipped (Starter Plan)`);
     }
 
-    // 4. Notify Merchant of New Order
+    // 3. Notifications
     if (shop?.email) {
-      this.emailService.sendNewOrderAlert(shop.email, order, shop.name).catch((err) =>
-        this.logger.warn(`Failed to send merchant order alert: ${err.message}`),
-      );
+      this.emailService
+        .sendNewOrderAlert(shop.email, createdOrder, shop.name)
+        .catch((e) => this.logger.warn(`Failed alert: ${e.message}`));
     }
-
-    // 5. Notify Customer of Order Confirmation
     const customerEmail = data.email || data.customerEmail || data.customer_email;
-    if (customerEmail && order) {
-      this.emailService.sendOrderConfirmation(customerEmail, order, shop?.name || 'Shop').catch((err) =>
-        this.logger.warn(`Failed to send customer order confirmation: ${err.message}`),
-      );
+    if (customerEmail) {
+      this.emailService
+        .sendOrderConfirmation(customerEmail, createdOrder, shop?.name || 'Shop')
+        .catch((e) => this.logger.warn(`Failed confirm: ${e.message}`));
     }
 
-    // 6. External Platform Sync (Two-Way Sync)
-    // We do this non-blocking
+    // 4. External Sync
     setTimeout(async () => {
       try {
         const orderWithFullItems = await this.db.order.findUnique({
-          where: { id: order.id },
-          include: {
-            orderItems: { include: { product: true } },
-            customer: true,
-            shop: true,
-          }
+          where: { id: createdOrder.id },
+          include: { orderItems: { include: { product: true } }, shop: true },
         });
-
-        if (orderWithFullItems && orderWithFullItems.shop) {
-          const wcid = await this.wooCommerceService.pushOrder(orderWithFullItems.shop, orderWithFullItems, orderWithFullItems.orderItems);
-          const shid = await this.shopifyService.pushOrder(orderWithFullItems.shop, orderWithFullItems, orderWithFullItems.orderItems);
-
-          const externalId = wcid || shid;
-          if (externalId) {
+        if (orderWithFullItems?.shop) {
+          const wcid = await this.wooCommerceService.pushOrder(
+            orderWithFullItems.shop,
+            orderWithFullItems,
+            orderWithFullItems.orderItems,
+          );
+          const shid = await this.shopifyService.pushOrder(
+            orderWithFullItems.shop,
+            orderWithFullItems,
+            orderWithFullItems.orderItems,
+          );
+          if (wcid || shid) {
             await this.db.order.update({
-              where: { id: order.id },
-              data: { externalOrderId: String(externalId) }
+              where: { id: createdOrder.id },
+              data: { externalOrderId: String(wcid || shid) },
             });
           }
         }
-      } catch (e: any) {
-        this.logger.error(`Failed external sync for order ${order.id}: ${e.message}`);
+      } catch (e) {
+        this.logger.error(`Sync failed: ${e.message}`);
       }
     }, 0);
 
-    return order;
+    return createdOrder;
   }
 
   async findAll(shopId: string) {

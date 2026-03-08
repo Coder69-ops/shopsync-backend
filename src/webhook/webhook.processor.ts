@@ -594,6 +594,14 @@ export class WebhookProcessor extends WorkerHost {
                 responseText =
                   "I believe I have already placed this order! If you want to place a new one, please add 'New Order' to your message.";
               } else {
+                // EXTRACTION FIX: Get delivery fee from AI persistence
+                const shippingDetails = aiResponse.shipping_details;
+                const deliveryFee = Number(shippingDetails?.charge) || 0;
+
+                if (deliveryFee > 0) {
+                  this.logger.log(`Applying AI-persisted delivery fee: ${deliveryFee} for PSID: ${messaging.sender.id}`);
+                }
+
                 // Create Order
                 const createdOrder = await this.orderService.create(
                   {
@@ -604,9 +612,16 @@ export class WebhookProcessor extends WorkerHost {
                     items: JSON.stringify(items),
                     totalPrice:
                       orderData.total_price || orderData.total_amount || 0,
+                    deliveryFee: deliveryFee, // Pass the extracted fee
                     status: 'PENDING',
                     psid: messaging.sender.id,
                     source: 'AI',
+                    rawExtract: {
+                      ...orderData,
+                      shipping_details: shippingDetails,
+                      deliveryChargeApplied: deliveryFee,
+                      psid: messaging.sender.id,
+                    },
                   },
                   shop.id,
                 );
