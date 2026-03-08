@@ -152,6 +152,7 @@ export class WebhookController {
       this.logger.warn(`Signature mismatch! 
         Expected: ${digest}
         Got:      ${signature}
+        Secret MD5: ${crypto.createHash('md5').update(signatureSecret).digest('hex')}
       `);
 
       const bypassEnabled = this.configService.get<string>('FB_SIGNATURE_BYPASS') === 'true';
