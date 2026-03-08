@@ -143,18 +143,21 @@ export class WebhookController {
       'sha256=' +
       hmac.update(isBuffer ? rawBody : Buffer.from(rawBody)).digest('hex');
 
-    if (signature !== digest) {
+    const bypassEnabled =
+      this.configService.get<string>('FB_SIGNATURE_BYPASS') === 'true';
+
+    if (bypassEnabled) {
+      this.logger.warn('⚠️ Webhook Signature BYPASS enabled! Skipping verification...');
+    } else if (signature !== digest) {
       this.logger.warn(`Signature mismatch! 
         Expected: ${digest}
         Got:      ${signature}
-        Secret starts with: ${signatureSecret.substring(0, 4)}`);
+      `);
 
-      const bypassEnabled =
-        this.configService.get<string>('FB_SIGNATURE_BYPASS') === 'true';
+      const bypassEnabled = this.configService.get<string>('FB_SIGNATURE_BYPASS') === 'true';
       if (!bypassEnabled) {
         throw new UnauthorizedException('Invalid signature');
       }
-
       this.logger.warn('FB_SIGNATURE_BYPASS is enabled. Proceeding anyway.');
     }
 
