@@ -20,10 +20,15 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { ApiBearerAuth, ApiQuery, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../auth/current-user.decorator';
 
+import { AiAnalyticsSchedulerService } from '../ai/ai-analytics-scheduler.service';
+
 @ApiTags('order')
 @Controller('order')
 export class OrderController {
-  constructor(private readonly orderService: OrderService) {}
+  constructor(
+    private readonly orderService: OrderService,
+    private readonly aiScheduler: AiAnalyticsSchedulerService,
+  ) { }
 
   // ─── Metrics ──────────────────────────────────────────────────────────────
 
@@ -32,6 +37,23 @@ export class OrderController {
   @Get('metrics')
   getMetrics(@CurrentUser('shopId') shopId: string) {
     return this.orderService.getMetrics(shopId);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({ summary: 'Fetch historical AI batch insights (deep-dive)' })
+  @Get('ai-insights')
+  getAiInsights(@CurrentUser('shopId') shopId: string) {
+    return this.orderService.getAiInsights(shopId);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({ summary: 'Manually trigger AI batch analysis for current shop' })
+  @Post('trigger-ai-analysis')
+  async triggerAiAnalysis(@CurrentUser('shopId') shopId: string) {
+    await this.aiScheduler.triggerManualAnalysis(shopId);
+    return { message: 'AI Analysis manually triggered. It may take a few minutes.', shopId };
   }
 
   // ─── RedX helper — must be declared BEFORE `:id` routes ──────────────────

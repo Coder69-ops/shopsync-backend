@@ -176,6 +176,7 @@ model Shop {
   subscriptionEndsAt DateTime? // For Manual Subscriptions (Pro)
   trialEndsAt        DateTime? // For Trial Expiry
   tokenUsages        TokenUsage[]
+  aiInsights         AiInsight[]
 
   knowledgeBases KnowledgeBase[]
 
@@ -730,5 +731,16 @@ model EmailPreset {
   trialExpiredBody             String @db.Text @default("")
 
   createdAt DateTime @default(now())
+}
+
+model AiInsight {
+  id        String   @id @default(uuid())
+  shopId    String
+  shop      Shop     @relation(fields: [shopId], references: [id])
+  type      String   // SENTIMENT, HAGGLING, REGIONAL, MISSED_OPPORTUNITY, BATCH_ANALYSIS
+  value     Json     // Flexible storage for data points or Gemini's full analysis
+  date      DateTime @default(now())
+
+  @@index([shopId, type, date])
 }
 
