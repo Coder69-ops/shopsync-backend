@@ -3,6 +3,7 @@ import { DatabaseService } from '../database/database.service';
 import { FacebookService } from '../facebook/facebook.service';
 import { OrderService } from '../order/order.service';
 import { Sender, MessageStatus, MsgType } from '@prisma/client';
+import { ChatGateway } from './chat.gateway';
 
 @Injectable()
 export class InboxService {
@@ -12,6 +13,7 @@ export class InboxService {
         private readonly db: DatabaseService,
         private readonly facebookService: FacebookService,
         private readonly orderService: OrderService,
+        private readonly chatGateway: ChatGateway,
     ) { }
 
     async getConversations(shopId: string, page: number = 1, limit: number = 20) {
@@ -122,10 +124,15 @@ export class InboxService {
             );
 
             // 3. Update status to SENT
-            return this.db.message.update({
+            const updatedMessage = await this.db.message.update({
                 where: { id: message.id },
                 data: { status: MessageStatus.SENT },
             });
+
+            // 4. Broadcast to all clients
+            this.chatGateway.emitNewMessage(shopId, updatedMessage);
+
+            return updatedMessage;
         } catch (error) {
             this.logger.error(`Failed to send FB message: ${error.message}`);
             await this.db.message.update({
@@ -159,17 +166,32 @@ export class InboxService {
             createdAt: new Date(),
         });
 
-        return this.db.conversation.update({
+        const updatedConversation = await this.db.conversation.update({
             where: { id: conversationId },
             data: { internalNotes: notes },
         });
+
+        // Broadcast update
+        this.chatGateway.emitConversationUpdate(conversation.shopId, updatedConversation);
+
+        return updatedConversation;
     }
 
     async updateTags(conversationId: string, tags: string[]) {
-        return this.db.conversation.update({
+        const conversation = await this.db.conversation.findUnique({
+            where: { id: conversationId },
+        });
+
+        const updatedConversation = await this.db.conversation.update({
             where: { id: conversationId },
             data: { tags },
         });
+
+        if (conversation) {
+            this.chatGateway.emitConversationUpdate(conversation.shopId, updatedConversation);
+        }
+
+        return updatedConversation;
     }
 
     private async getCustomerStats(shopId: string, psid: string) {
