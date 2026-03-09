@@ -1,5 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
+import * as crypto from 'crypto';
 
 // Use strings instead of enum exports to resolve IDE ghosting while maintaining functionality
 const UserRole = {

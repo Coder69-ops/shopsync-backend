@@ -353,8 +353,9 @@ export class AiService {
 
     if (hasPhysical) {
       businessRules += `
-      - For PHYSICAL items: You MUST collect Name, Phone Number, and Full Delivery Address.
-      - Add Delivery Charge: Inside Dhaka ${deliveryInside} BDT, Outside ${deliveryOutside} BDT.`;
+      - For PHYSICAL items (products): You MUST collect the customer's Full Name, Phone Number, and Full Delivery Address (including Area/City).
+      - Do NOT finalize an order until all three are provided.
+      - Add Delivery Charge: Inside Dhaka ${deliveryInside} BDT, Outside Dhaka ${deliveryOutside} BDT.`;
     }
 
     if (hasServices) {
@@ -387,7 +388,8 @@ export class AiService {
       .replace(/{{INVENTORY_LIST}}/g, inventoryList)
       .replace(/{{DELIVERY_INSIDE}}/g, deliveryInside.toString())
       .replace(/{{DELIVERY_OUTSIDE}}/g, deliveryOutside.toString())
-      .replace(/{{KNOWLEDGE_BASE}}/g, qnaContext); // Support both {{KNOWLEDGE_BASE}} and appending
+      .replace(/{{KNOWLEDGE_BASE}}/g, qnaContext)
+      .replace(/{{SHOP_DIRECTIVE}}/g, aiConfig.customPrompt || ''); // Inject Shop Owner's custom instructions
 
     // Inject Business Rules via a placeholder if it exists, otherwise append
     if (prompt.includes('{{BUSINESS_RULES}}')) {
