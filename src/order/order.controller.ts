@@ -51,9 +51,12 @@ export class OrderController {
   @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'Manually trigger AI batch analysis for current shop' })
   @Post('trigger-ai-analysis')
-  async triggerAiAnalysis(@CurrentUser('shopId') shopId: string) {
-    await this.aiScheduler.triggerManualAnalysis(shopId);
-    return { message: 'AI Analysis manually triggered. It may take a few minutes.', shopId };
+  async triggerAiAnalysis(
+    @CurrentUser('shopId') shopId: string,
+    @Body('days') days?: number,
+  ) {
+    await this.aiScheduler.triggerManualAnalysis(shopId, days || 1);
+    return { message: 'AI Analysis manually triggered. It may take a few minutes.', shopId, days: days || 1 };
   }
 
   // ─── RedX helper — must be declared BEFORE `:id` routes ──────────────────

@@ -54,10 +54,11 @@ export class AiAnalyticsSchedulerService implements OnModuleInit {
     /**
      * Manual trigger for a specific shop (useful for testing or on-demand)
      */
-    async triggerManualAnalysis(shopId: string) {
-        this.logger.log(`Manually triggering AI analysis for shop ${shopId}`);
+    async triggerManualAnalysis(shopId: string, days: number = 1) {
+        this.logger.log(`Manually triggering ${days}-day AI analysis for shop ${shopId}`);
         await this.analyticsQueue.add('analyze-shop-manual', {
             shopId,
+            days,
         });
     }
 }

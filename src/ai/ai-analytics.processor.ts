@@ -18,12 +18,21 @@ export class AiAnalyticsProcessor extends WorkerHost {
 
     async process(job: Job<any, any, string>): Promise<any> {
         this.logger.log(`Starting daily AI batch analysis for shop ${job.data.shopId}`);
-        const { shopId } = job.data;
+        const { shopId, days = 1 } = job.data;
 
-        // Get yesterday's date range
-        const yesterday = subDays(new Date(), 1);
-        const start = startOfDay(yesterday);
-        const end = endOfDay(yesterday);
+        // Calculate dynamic date range
+        // If days=1, we analyze 'yesterday' specifically to keep the 24h cycle clean for daily cron.
+        // If days > 1 or specific manual trigger, we look at the last X days until now.
+        let start: Date;
+        let end: Date = new Date();
+
+        if (days === 1) {
+            const yesterday = subDays(new Date(), 1);
+            start = startOfDay(yesterday);
+            end = endOfDay(yesterday);
+        } else {
+            start = startOfDay(subDays(new Date(), days - 1));
+        }
 
         try {
             // 1. Fetch all conversations and messages from yesterday for this shop
@@ -85,7 +94,7 @@ export class AiAnalyticsProcessor extends WorkerHost {
                     shopId,
                     type: 'BATCH_ANALYSIS',
                     value: analysisResult,
-                    date: yesterday,
+                    date: start,
                 },
             });
 
