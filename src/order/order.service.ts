@@ -96,28 +96,32 @@ export class OrderService {
 
           if (!product) {
             this.logger.warn(`Product not found: ${item.product_name || item.name}`);
+            const unitPrice = Number(item.unitPrice) || Number(item.price) || 0;
+            const quantity = Number(item.quantity) || 1;
+            const itemTotal = unitPrice * quantity;
+
             orderItemsToCreate.push({
               name: item.product_name || item.name || 'Generic Item',
-              quantity: Number(item.quantity) || 1,
-              unitPrice: Number(item.unitPrice) || Number(item.price) || 0,
-              total: (Number(item.unitPrice) || Number(item.price) || 0) * (Number(item.quantity) || 1),
+              quantity: quantity,
+              unitPrice: unitPrice,
+              total: itemTotal,
             });
-            productSubTotal += (Number(item.unitPrice) || Number(item.price) || 0) * (Number(item.quantity) || 1);
+            productSubTotal += itemTotal;
             continue;
           }
 
           // Deduct Stock
-          if (product.stock >= item.quantity) {
+          const quantity = Number(item.quantity) || 1;
+          if (product.stock >= quantity) {
             await tx.product.update({
               where: { id: product.id },
-              data: { stock: { decrement: item.quantity } },
+              data: { stock: { decrement: quantity } },
             });
           } else {
-            this.logger.warn(`Over-selling product ${product.name} (Stock: ${product.stock}, Req: ${item.quantity})`);
+            this.logger.warn(`Over-selling product ${product.name} (Stock: ${product.stock}, Req: ${quantity})`);
           }
 
-          const unitPrice = Number(product.price);
-          const quantity = Number(item.quantity);
+          const unitPrice = Number(product.price); // MANDATORY: Use actual DB price for accuracy
           const itemTotal = unitPrice * quantity;
 
           orderItemsToCreate.push({
@@ -131,8 +135,9 @@ export class OrderService {
         }
       } else {
         // Handle string/generic items
+        const itemName = typeof data.items === 'string' ? data.items : 'Generic Item';
         orderItemsToCreate.push({
-          name: typeof data.items === 'string' ? data.items : 'Generic Item',
+          name: itemName,
           quantity: 1,
           unitPrice: 0,
           total: 0,

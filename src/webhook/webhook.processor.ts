@@ -500,7 +500,18 @@ export class WebhookProcessor extends WorkerHost {
               if (Array.isArray(rawItems)) {
                 items = rawItems;
               } else if (typeof rawItems === 'string') {
-                items = [{ product_name: rawItems, quantity: 1 }];
+                try {
+                  // Robust parsing: AI might return a JSON-stringified array
+                  const parsed = JSON.parse(rawItems);
+                  if (Array.isArray(parsed)) {
+                    items = parsed;
+                  } else {
+                    items = [{ product_name: rawItems, quantity: 1 }];
+                  }
+                } catch (e) {
+                  // Not valid JSON, treat as a single item name
+                  items = [{ product_name: rawItems, quantity: 1 }];
+                }
               }
 
               // Use confirmation message if available

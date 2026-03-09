@@ -459,15 +459,15 @@ export class AiService {
         "data": {}
       }
 
-      User: "Habib, 01711223344, Mirpur 10. Watch ta den."
+      User: "Habib, 01711223344, Mirpur 10. Watch ta den 2 ta."
       AI Output: {
         "intent": "CREATE_ORDER",
-        "reply_message": "Order confirmed! T900 Watch pathiye dicchi Mirpur 10 a. Total: [Calculated Price + Delivery] BDT.",
+        "reply_message": "Order confirmed! 2 ta T900 Watch pathiye dicchi Mirpur 10 a. Total: [Calculated Price + Delivery] BDT.",
         "data": {
           "customer_name": "Habib",
           "phone": "01711223344",
           "address": "Mirpur 10",
-          "items": [{ "product_name": "T900 Ultra Smartwatch", "quantity": 1 }],
+          "items": [{ "product_name": "T900 Ultra Smartwatch", "quantity": 2 }],
           "total_price": [Price + Delivery],
           "delivery_type": "inside"
         }
@@ -484,33 +484,26 @@ export class AiService {
           "appointment_date": "Tomorrow 10:00 AM",
           "items": [{ "product_name": "Website Design", "quantity": 1 }],
           "total_price": 5000,
-          "delivery_type": "inside" // Irrelevant for service but keep consistency
+          "delivery_type": "inside"
         }
-      }
-
-      User: "Lal ta den." (Missing Info)
-      AI Output: {
-        "intent": "GENERAL_QUERY",
-        "reply_message": "Thik ache sir, Lal ta dewa jabe. Kindly apnar Phone number r Address ta din?",
-        "data": {}
       }
 
       ### RESPONSE FORMAT (JSON ONLY, NO MARKDOWN BLOCK):
       {
         "intent": "CREATE_ORDER" | "GENERAL_QUERY" | "CHECK_STATUS" | "CHECK_SHIPPING" | "RETURN_ORDER",
-        "thought": "Reasoning (e.g., User gave address but missing phone)",
-        "reply_message": "The text to show the user",
+        "thought": "Brief reasoning",
+        "reply_message": "The text for user",
         "data": {
-           "customer_name": "string or null",
-           "phone": "string or null",
-           "address": "string or null",
-           "appointment_date": "string or null (For Services)",
-           "items": [{ "product_name": "string", "quantity": number }] or [],
+           "customer_name": "string",
+           "phone": "string",
+           "address": "string",
+           "appointment_date": "string (For Services)",
+           "items": [{ "product_name": "Exact Name from Inventory", "quantity": number }],
            "total_price": number,
            "delivery_type": "inside" | "outside",
-           "order_id": "string or null",
-           "return_reason": "string or null",
-           "area_name": "string or null"
+           "order_id": "string",
+           "return_reason": "string",
+           "area_name": "string"
         }
       }
       `;
