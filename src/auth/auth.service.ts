@@ -571,4 +571,40 @@ export class AuthService {
 
         return { success: true, message: 'Preferences updated successfully', data: updateData };
     }
+
+    async getProfile(userId: string) {
+        const user = await this.db.user.findUnique({
+            where: { id: userId },
+            include: { shop: true },
+        });
+
+        if (!user) {
+            throw new NotFoundException('User not found');
+        }
+
+        const payload = {
+            sub: user.id,
+            email: user.email,
+            profilePic: (user as any).profilePic,
+            role: user.role,
+            shopId: user.shopId,
+            trialEndsAt: user.trialEndsAt,
+            subscriptionEndsAt: user.shop?.subscriptionEndsAt,
+            plan: user.role === 'SUPERADMIN' ? 'PRO' : user.shop?.plan || 'FREE',
+            onboardingCompleted: user.onboardingCompleted,
+            hasSeenTour: user.hasSeenTour,
+            isActive: user.isActive,
+            shopIsActive: user.shop?.isActive ?? true,
+            themePreference: (user as any).themePreference,
+            languagePreference: (user as any).languagePreference,
+            emailNotifications: (user as any).emailNotifications,
+        };
+
+        const token = await this.jwtService.signAsync(payload);
+
+        // Remove password before returning
+        const { password, ...safeUser } = user;
+
+        return { access_token: token, user: safeUser };
+    }
 }

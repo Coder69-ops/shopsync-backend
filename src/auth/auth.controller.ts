@@ -2,6 +2,7 @@ import {
   Controller,
   Post,
   Patch,
+  Get,
   Body,
   HttpCode,
   HttpStatus,
@@ -141,5 +142,11 @@ export class AuthController {
   @Post('resend-verification')
   async resendVerification(@Body('email') email: string) {
     return this.authService.resendVerificationEmail(email);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('me')
+  async getProfile(@CurrentUser('id') userId: string) {
+    return this.authService.getProfile(userId);
   }
 }
