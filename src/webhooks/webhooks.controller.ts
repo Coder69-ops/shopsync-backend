@@ -24,8 +24,12 @@ export class WebhooksController {
         private readonly configService: ConfigService,
     ) {
         const paddleKey = this.configService.get<string>('PADDLE_API_KEY') || 'dummy_key';
+        const paddleEnv = this.configService.get<string>('PADDLE_ENV') === 'production' 
+            ? Environment.production 
+            : Environment.sandbox;
+            
         this.paddle = new Paddle(paddleKey, {
-            environment: Environment.sandbox, // or use config to determine environment
+            environment: paddleEnv,
         });
     }
 
@@ -77,9 +81,14 @@ export class WebhooksController {
 
                     if (items.length > 0) {
                         const priceId = items[0].price?.id || items[0].priceId;
-                        if (priceId === 'pri_01kkc9yb73a5sjjj2j8zcm0zjm' || priceId === 'pri_01kkca1spzdtcgh919a33stg2q') {
+                        const starterMonthly = this.configService.get('PADDLE_PRICE_STARTER_MONTHLY') || 'pri_01kkc9yb73a5sjjj2j8zcm0zjm';
+                        const starterYearly = this.configService.get('PADDLE_PRICE_STARTER_YEARLY') || 'pri_01kkca1spzdtcgh919a33stg2q';
+                        const proMonthly = this.configService.get('PADDLE_PRICE_PRO_MONTHLY') || 'pri_01kkca6jm0veq9dyspmfv552kx';
+                        const proYearly = this.configService.get('PADDLE_PRICE_PRO_YEARLY') || 'pri_01kkca94g0b9223kqg8dep6tng';
+
+                        if (priceId === starterMonthly || priceId === starterYearly) {
                             planName = 'BASIC';
-                        } else if (priceId === 'pri_01kkca6jm0veq9dyspmfv552kx' || priceId === 'pri_01kkca94g0b9223kqg8dep6tng') {
+                        } else if (priceId === proMonthly || priceId === proYearly) {
                             planName = 'PRO';
                         }
                     }

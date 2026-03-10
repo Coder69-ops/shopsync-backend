@@ -3,6 +3,7 @@ import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import helmet from 'helmet';
+import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
 import { createBullBoard } from '@bull-board/api';
 import { BullMQAdapter } from '@bull-board/api/bullMQAdapter';
 import { ExpressAdapter } from '@bull-board/express';
@@ -64,6 +65,7 @@ async function bootstrap() {
       transform: true, // Auto-transform payloads to DTO instances
     }),
   );
+  app.useGlobalFilters(new GlobalExceptionFilter());
 
   // 4. Swagger API Documentation
   const config = new DocumentBuilder()
