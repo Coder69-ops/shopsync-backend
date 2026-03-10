@@ -89,6 +89,15 @@ export class WebhooksController {
 
                     this.logger.log(`Upgrading shop ${shopId} to ${planName} and ACTIVE status.`);
 
+                    // 1. Calculate subscription ends at
+                    // Usually 1 month or 1 year depending on plan/billing cycle. Let's default to 30 days for now or parse from payload if available.
+                    const nextBilledAtStr = (eventData.data as any).currentBillingPeriod?.endsAt
+                        || (eventData.data as any).nextBilledAt;
+                    const subscriptionEndsAt = nextBilledAtStr
+                        ? new Date(nextBilledAtStr)
+                        : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+
+                    // 2. Update Shop
                     await this.prisma.shop.update({
                         where: { id: shopId },
                         data: {
@@ -98,9 +107,45 @@ export class WebhooksController {
                             paddleSubscriptionId: subscriptionId,
                             paddleCustomerId: customerId,
                             merchantId: customerId, // Kept for legacy support
-                            subscriptionId: subscriptionId // Kept for legacy support 
+                            subscriptionId: subscriptionId, // Kept for legacy support
+                            trialEndsAt: null, // Clear trial
+                            subscriptionEndsAt: subscriptionEndsAt,
                         },
                     });
+
+                    // 3. Clear trial on all admins of this shop
+                    await this.prisma.user.updateMany({
+                        where: { shopId: shopId },
+                        data: {
+                            trialEndsAt: null,
+                        }
+                    });
+
+                    // 4. Create Payment History Record (Only on actual transactions)
+                    if (eventData.eventType === 'transaction.completed') {
+                        const amountPaid = ((eventData.data as any).details?.totals?.total || 0) / 100;
+                        const paymentTxId = eventData.eventId || subscriptionId;
+
+                        // Ensure payment record doesn't already exist for this event
+                        const existingPayment = await this.prisma.payment.findUnique({
+                            where: { transactionId: paymentTxId }
+                        });
+
+                        if (!existingPayment) {
+                            await this.prisma.payment.create({
+                                data: {
+                                    shopId: shopId,
+                                    amount: amountPaid,
+                                    method: 'Paddle',
+                                    senderNumber: customerId || 'PADDLE_AUTO',
+                                    transactionId: paymentTxId,
+                                    status: 'APPROVED',
+                                }
+                            });
+                            this.logger.log(`Created payment record for shop ${shopId}, txId: ${paymentTxId}`);
+                        }
+                    }
+
                 } else {
                     this.logger.warn('Received transaction.completed but no shopId found in customData');
                 }
