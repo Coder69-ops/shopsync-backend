@@ -53,6 +53,13 @@ enum SubscriptionPlan {
   PRO_TRIAL
 }
 
+enum SubscriptionStatus {
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  TRIALING
+}
+
 enum Platform {
   FACEBOOK
   INSTAGRAM
@@ -181,9 +188,12 @@ model Shop {
   knowledgeBases KnowledgeBase[]
 
   // SaaS Billing Gateways
-  merchantId         String? // LemonSqueezy/Paddle Merchant/Customer ID
-  subscriptionId     String? // LemonSqueezy/Paddle Subscription ID
-  subscriptionStatus String? // active, past_due, canceled
+  merchantId         String?             // LemonSqueezy/Paddle Merchant/Customer ID
+  subscriptionId     String?             // LemonSqueezy/Paddle Subscription ID
+  subscriptionStatus SubscriptionStatus? // ACTIVE, PAST_DUE, CANCELED, TRIALING
+  subscriptionPlan   String?             // 'Starter', 'Pro Business'
+  paddleCustomerId   String?
+  paddleSubscriptionId String?
 
   // Superadmin Overrides (Null means fallback to PlanConfig)
   customMessageLimit Int?

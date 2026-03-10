@@ -35,6 +35,7 @@ import { IntegrationModule } from './integration/integration.module';
 import { InboxModule } from './inbox/inbox.module';
 import { WooCommerceModule } from './woocommerce/woocommerce.module';
 import { ShopifyModule } from './shopify/shopify.module';
+import { WebhooksModule } from './webhooks/webhooks.module';
 
 @Module({
   imports: [
@@ -97,6 +98,7 @@ import { ShopifyModule } from './shopify/shopify.module';
     InboxModule,
     WooCommerceModule,
     ShopifyModule,
+    WebhooksModule,
   ],
   controllers: [AppController],
   providers: [
