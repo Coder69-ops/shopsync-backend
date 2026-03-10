@@ -24,7 +24,8 @@ export class WebhooksController {
         private readonly configService: ConfigService,
     ) {
         const paddleKey = this.configService.get<string>('PADDLE_API_KEY') || 'dummy_key';
-        const paddleEnv = this.configService.get<string>('PADDLE_ENV') === 'production' 
+        const paddleEnvVar = this.configService.get<string>('PADDLE_ENVIRONMENT') || this.configService.get<string>('PADDLE_ENV');
+        const paddleEnv = paddleEnvVar === 'production' 
             ? Environment.production 
             : Environment.sandbox;
             
@@ -81,10 +82,10 @@ export class WebhooksController {
 
                     if (items.length > 0) {
                         const priceId = items[0].price?.id || items[0].priceId;
-                        const starterMonthly = this.configService.get('PADDLE_PRICE_STARTER_MONTHLY') || 'pri_01kkc9yb73a5sjjj2j8zcm0zjm';
-                        const starterYearly = this.configService.get('PADDLE_PRICE_STARTER_YEARLY') || 'pri_01kkca1spzdtcgh919a33stg2q';
-                        const proMonthly = this.configService.get('PADDLE_PRICE_PRO_MONTHLY') || 'pri_01kkca6jm0veq9dyspmfv552kx';
-                        const proYearly = this.configService.get('PADDLE_PRICE_PRO_YEARLY') || 'pri_01kkca94g0b9223kqg8dep6tng';
+                        const starterMonthly = this.configService.get('PADDLE_PRICE_STARTER_MONTHLY') || 'pri_01kkct18j6jx04zc1jxvr6g735';
+                        const starterYearly = this.configService.get('PADDLE_PRICE_STARTER_YEARLY') || 'pri_01kkct31y08686k3s1n6ah1qyt';
+                        const proMonthly = this.configService.get('PADDLE_PRICE_PRO_MONTHLY') || 'pri_01kkct4vxpr0jvc1zmy39w70vg';
+                        const proYearly = this.configService.get('PADDLE_PRICE_PRO_YEARLY') || 'pri_01kkct76cja0qf79ffdssh3qdh';
 
                         if (priceId === starterMonthly || priceId === starterYearly) {
                             planName = 'BASIC';
