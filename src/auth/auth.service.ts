@@ -262,6 +262,7 @@ export class AuthService {
                 name: data.shopName,
                 ownerName: data.ownerName,
                 plan: selectedPlan as any, // Update Shop Plan
+                trialEndsAt: trialEndsAt, // Sync trial date to shop
                 brandColor: data.brandColor || '#6366F1', // Fix Color Hex Bug
 
                 logoUrl: data.logoUrl,
