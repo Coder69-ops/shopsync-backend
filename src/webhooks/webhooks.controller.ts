@@ -73,14 +73,14 @@ export class WebhooksController {
 
                 if (shopId) {
                     const items = (eventData.data as any).items || [];
-                    let planName = 'Pro';
+                    let planName: 'BASIC' | 'PRO' = 'PRO';
 
                     if (items.length > 0) {
                         const priceId = items[0].price?.id || items[0].priceId;
                         if (priceId === 'pri_01kkc9yb73a5sjjj2j8zcm0zjm' || priceId === 'pri_01kkca1spzdtcgh919a33stg2q') {
-                            planName = 'Starter';
+                            planName = 'BASIC';
                         } else if (priceId === 'pri_01kkca6jm0veq9dyspmfv552kx' || priceId === 'pri_01kkca94g0b9223kqg8dep6tng') {
-                            planName = 'Pro Business';
+                            planName = 'PRO';
                         }
                     }
 
@@ -93,7 +93,8 @@ export class WebhooksController {
                         where: { id: shopId },
                         data: {
                             subscriptionStatus: 'ACTIVE',
-                            subscriptionPlan: planName,
+                            plan: planName,
+                            subscriptionPlan: planName === 'BASIC' ? 'Starter' : 'Pro Business',
                             paddleSubscriptionId: subscriptionId,
                             paddleCustomerId: customerId,
                             merchantId: customerId, // Kept for legacy support
