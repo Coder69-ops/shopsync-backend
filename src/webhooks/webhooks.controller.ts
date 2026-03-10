@@ -64,7 +64,6 @@ export class WebhooksController {
                 signature,
             );
 
-            this.logger.log(`Received Paddle Event: ${eventData.eventType}`);
 
             // 2. Handle specific events
             if (
