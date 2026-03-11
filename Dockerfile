@@ -23,6 +23,12 @@ RUN apk add --no-cache openssl
 
 WORKDIR /app
 
+ARG FRONTEND_URL
+ARG FACEBOOK_CONFIG_ID
+
+ENV FRONTEND_URL=$FRONTEND_URL
+ENV FACEBOOK_CONFIG_ID=$FACEBOOK_CONFIG_ID
+
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/package*.json ./
 COPY --from=builder /app/dist ./dist
