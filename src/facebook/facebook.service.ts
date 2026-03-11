@@ -33,22 +33,22 @@ export class FacebookService {
     }
   }
 
-  async exchangeCodeForAccessToken(code: string): Promise<string> {
+  async exchangeCodeForAccessToken(code: string, redirectUri?: string): Promise<string> {
     try {
       const appId = this.configService.get<string>('FACEBOOK_APP_ID');
-      const appSecret = this.configService.get<string>('FACEBOOK_APP_SECRET');
+      const appSecret = this.configService.get<string>('FACEBOOK_APP_SECRET') || this.configService.get<string>('FB_APP_SECRET');
 
       if (!appId || !appSecret) {
         this.logger.error('Missing FACEBOOK_APP_ID or FACEBOOK_APP_SECRET');
         throw new Error('Facebook App Credentials missing');
       }
 
-      // Use v24.0 to remain consistent with existing service calls
       const url = `https://graph.facebook.com/v24.0/oauth/access_token`;
       const response = await axios.get(url, {
         params: {
           client_id: appId,
           client_secret: appSecret,
+          redirect_uri: redirectUri,
           code: code,
         },
       });
@@ -61,6 +61,15 @@ export class FacebookService {
       );
       throw new Error('Failed to exchange Facebook code');
     }
+  }
+
+  async getFacebookConnectUrl(type: 'onboarding' | 'integrations'): Promise<string> {
+    const appId = this.configService.get<string>('FACEBOOK_APP_ID');
+    const configId = this.configService.get<string>('FACEBOOK_CONFIG_ID');
+    const backendUrl = this.configService.get<string>('BACKEND_URL') || 'https://api.shopsync.studio';
+    const redirectUri = `${backendUrl}/facebook/callback?type=${type}`;
+
+    return `https://www.facebook.com/v24.0/dialog/oauth?client_id=${appId}&redirect_uri=${encodeURIComponent(redirectUri)}&config_id=${configId}&response_type=code`;
   }
 
   async getManagedPages(longLivedToken: string): Promise<any[]> {

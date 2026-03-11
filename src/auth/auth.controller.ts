@@ -7,8 +7,11 @@ import {
   HttpCode,
   HttpStatus,
   UseGuards,
+  Query,
   Req,
+  Res,
 } from '@nestjs/common';
+import { Response } from 'express';
 import { AuthService } from './auth.service';
 import { UploadService } from '../upload/upload.service';
 import { FileInterceptor } from '@nestjs/platform-express';
@@ -85,6 +88,24 @@ export class AuthController {
   @Post('facebook')
   async facebookLogin(@Body('accessToken') accessToken: string) {
     return this.authService.facebookAuth(accessToken);
+  }
+
+  @Get('facebook/login')
+  async facebookRedirect(@Res() res: Response) {
+    const url = await this.authService.getFacebookAuthUrl();
+    return res.redirect(url);
+  }
+
+  @Get('facebook/callback')
+  async facebookCallback(@Query('code') code: string, @Res() res: Response) {
+    try {
+      const { access_token } = await this.authService.handleFacebookCallback(code);
+      const frontendUrl = process.env.FRONTEND_URL || 'https://shopsync.studio';
+      return res.redirect(`${frontendUrl}/login?token=${access_token}`);
+    } catch (error) {
+      const frontendUrl = process.env.FRONTEND_URL || 'https://shopsync.studio';
+      return res.redirect(`${frontendUrl}/login?error=facebook_auth_failed`);
+    }
   }
 
   @UseGuards(JwtAuthGuard)

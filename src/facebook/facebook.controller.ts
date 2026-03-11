@@ -7,7 +7,10 @@ import {
   UseGuards,
   HttpException,
   HttpStatus,
+  Res,
 } from '@nestjs/common';
+import { Response } from 'express';
+import { ConfigService } from '@nestjs/config';
 import { FacebookService } from './facebook.service';
 import { DatabaseService } from '../database/database.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -18,6 +21,7 @@ export class FacebookController {
   constructor(
     private readonly facebookService: FacebookService,
     private readonly db: DatabaseService,
+    private readonly configService: ConfigService,
   ) { }
 
   @UseGuards(JwtAuthGuard)
@@ -40,6 +44,50 @@ export class FacebookController {
         error.message || 'Failed to fetch pages',
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
+    }
+  }
+
+  @Get('connect')
+  async facebookConnect(
+    @Query('type') type: 'onboarding' | 'integrations',
+    @Res() res: Response,
+  ) {
+    const url = await this.facebookService.getFacebookConnectUrl(
+      type || 'integrations',
+    );
+    return res.redirect(url);
+  }
+
+  @Get('callback')
+  async facebookCallback(
+    @Query('code') code: string,
+    @Query('type') type: string,
+    @Res() res: Response,
+  ) {
+    try {
+      const backendUrl =
+        this.configService.get<string>('BACKEND_URL') ||
+        'https://api.shopsync.studio';
+      const redirectUri = `${backendUrl}/facebook/callback?type=${type}`;
+
+      const accessToken =
+        await this.facebookService.exchangeCodeForAccessToken(
+          code,
+          redirectUri,
+        );
+
+      const frontendUrl =
+        this.configService.get<string>('FRONTEND_URL') ||
+        'https://shopsync.studio';
+      const targetPath = type === 'onboarding' ? '/onboarding' : '/integrations';
+
+      return res.redirect(`${frontendUrl}${targetPath}?fb_token=${accessToken}`);
+    } catch (error) {
+      const frontendUrl =
+        this.configService.get<string>('FRONTEND_URL') ||
+        'https://shopsync.studio';
+      const targetPath = type === 'onboarding' ? '/onboarding' : '/integrations';
+      return res.redirect(`${frontendUrl}${targetPath}?error=facebook_connect_failed`);
     }
   }
 

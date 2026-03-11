@@ -1,5 +1,6 @@
 import { Injectable, UnauthorizedException, BadRequestException, NotFoundException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import { ConfigService } from '@nestjs/config';
 import { DatabaseService } from '../database/database.service';
 import * as bcrypt from 'bcrypt';
 import { EmailService } from '../email/email.service';
@@ -16,6 +17,7 @@ export class AuthService {
         private db: DatabaseService,
         private emailService: EmailService,
         private systemConfigService: SystemConfigService,
+        private configService: ConfigService,
         @InjectQueue('facebook-capi') private readonly fbCapiQueue: Queue,
     ) { }
 
@@ -507,6 +509,41 @@ export class AuthService {
                 error.response?.data || error.message,
             );
             throw new UnauthorizedException('Facebook authentication failed');
+        }
+    }
+
+    async getFacebookAuthUrl(): Promise<string> {
+        const appId = this.configService.get<string>('FACEBOOK_APP_ID');
+        const configId = this.configService.get<string>('FACEBOOK_CONFIG_ID');
+        const redirectUri = `${this.configService.get<string>('BACKEND_URL') || 'https://api.shopsync.studio'}/auth/facebook/callback`;
+
+        // Using Facebook Login for Business flow with config_id
+        return `https://www.facebook.com/v24.0/dialog/oauth?client_id=${appId}&redirect_uri=${encodeURIComponent(redirectUri)}&config_id=${configId}&response_type=code&scope=email,public_profile`;
+    }
+
+    async handleFacebookCallback(code: string): Promise<{ access_token: string }> {
+        const appId = this.configService.get<string>('FACEBOOK_APP_ID');
+        const appSecret = this.configService.get<string>('FACEBOOK_APP_SECRET') || this.configService.get<string>('FB_APP_SECRET');
+        const redirectUri = `${this.configService.get<string>('BACKEND_URL') || 'https://api.shopsync.studio'}/auth/facebook/callback`;
+
+        try {
+            // 1. Exchange code for access token
+            const tokenResponse = await axios.get('https://graph.facebook.com/v24.0/oauth/access_token', {
+                params: {
+                    client_id: appId,
+                    client_secret: appSecret,
+                    redirect_uri: redirectUri,
+                    code: code,
+                },
+            });
+
+            const accessToken = tokenResponse.data.access_token;
+
+            // 2. Use existing facebookAuth logic to get JWT
+            return this.facebookAuth(accessToken);
+        } catch (error: any) {
+            console.error('[AUTH] Facebook Callback Error:', error.response?.data || error.message);
+            throw new UnauthorizedException('Facebook authentication failed during callback');
         }
     }
     async markTourAsSeen(userId: string) {
