@@ -133,6 +133,7 @@ export class WebhooksController {
                     // 4. Create Payment History Record (Only on actual transactions)
                     if (eventData.eventType === 'transaction.completed') {
                         const amountPaid = ((eventData.data as any).details?.totals?.total || 0) / 100;
+                        const currency = (eventData.data as any).currencyCode || (eventData.data as any).currency_code || 'USD';
                         const paymentTxId = eventData.eventId || subscriptionId;
 
                         // Ensure payment record doesn't already exist for this event
@@ -141,17 +142,18 @@ export class WebhooksController {
                         });
 
                         if (!existingPayment) {
-                            await this.prisma.payment.create({
+                            await (this.prisma.payment as any).create({
                                 data: {
                                     shopId: shopId,
                                     amount: amountPaid,
+                                    currency: currency,
                                     method: 'Paddle',
                                     senderNumber: customerId || 'PADDLE_AUTO',
                                     transactionId: paymentTxId,
                                     status: 'APPROVED',
                                 }
                             });
-                            this.logger.log(`Created payment record for shop ${shopId}, txId: ${paymentTxId}`);
+                            this.logger.log(`Created payment record for shop ${shopId}, txId: ${paymentTxId} in ${currency}`);
                         }
                     }
 

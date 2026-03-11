@@ -58,13 +58,14 @@ export class PaymentService {
     }
 
     try {
-      const payment = await this.db.payment.create({
+      const payment: any = await (this.db.payment as any).create({
         data: {
           shopId,
           amount: data.amount,
           method: data.method,
           senderNumber: data.senderNumber,
           transactionId: data.transactionId,
+          currency: 'BDT', // Manual payments are always BDT
           status: 'PENDING',
         },
         include: { shop: true },

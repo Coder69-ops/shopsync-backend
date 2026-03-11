@@ -226,6 +226,7 @@ model Payment {
   shopId          String
   shop            Shop          @relation(fields: [shopId], references: [id])
   amount          Decimal
+  currency        String        @default("BDT")
   method          String // bKash, Nagad, Rocket
   senderNumber    String
   transactionId   String        @unique
