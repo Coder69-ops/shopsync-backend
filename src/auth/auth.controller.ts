@@ -100,10 +100,10 @@ export class AuthController {
   async facebookCallback(@Query('code') code: string, @Res() res: Response) {
     try {
       const { access_token } = await this.authService.handleFacebookCallback(code);
-      const frontendUrl = process.env.FRONTEND_URL || 'https://shopsync.studio';
+      const frontendUrl = process.env.FRONTEND_URL || 'https://shopsync.it.com';
       return res.redirect(`${frontendUrl}/login?token=${access_token}`);
     } catch (error) {
-      const frontendUrl = process.env.FRONTEND_URL || 'https://shopsync.studio';
+      const frontendUrl = process.env.FRONTEND_URL || 'https://shopsync.it.com';
       return res.redirect(`${frontendUrl}/login?error=facebook_auth_failed`);
     }
   }

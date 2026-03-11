@@ -67,7 +67,7 @@ export class FacebookController {
     try {
       const backendUrl =
         this.configService.get<string>('BACKEND_URL') ||
-        'https://api.shopsync.studio';
+        'https://api.shopsync.it.com';
       const redirectUri = `${backendUrl}/facebook/callback?type=${type}`;
 
       const accessToken =
@@ -78,14 +78,14 @@ export class FacebookController {
 
       const frontendUrl =
         this.configService.get<string>('FRONTEND_URL') ||
-        'https://shopsync.studio';
+        'https://shopsync.it.com';
       const targetPath = type === 'onboarding' ? '/onboarding' : '/integrations';
 
       return res.redirect(`${frontendUrl}${targetPath}?fb_token=${accessToken}`);
     } catch (error) {
       const frontendUrl =
         this.configService.get<string>('FRONTEND_URL') ||
-        'https://shopsync.studio';
+        'https://shopsync.it.com';
       const targetPath = type === 'onboarding' ? '/onboarding' : '/integrations';
       return res.redirect(`${frontendUrl}${targetPath}?error=facebook_connect_failed`);
     }

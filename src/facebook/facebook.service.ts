@@ -66,7 +66,7 @@ export class FacebookService {
   async getFacebookConnectUrl(type: 'onboarding' | 'integrations'): Promise<string> {
     const appId = this.configService.get<string>('FACEBOOK_APP_ID');
     const configId = this.configService.get<string>('FACEBOOK_CONFIG_ID');
-    const backendUrl = this.configService.get<string>('BACKEND_URL') || 'https://api.shopsync.studio';
+    const backendUrl = this.configService.get<string>('BACKEND_URL') || 'https://api.shopsync.it.com';
     const redirectUri = `${backendUrl}/facebook/callback?type=${type}`;
 
     return `https://www.facebook.com/v24.0/dialog/oauth?client_id=${appId}&redirect_uri=${encodeURIComponent(redirectUri)}&config_id=${configId}&response_type=code`;

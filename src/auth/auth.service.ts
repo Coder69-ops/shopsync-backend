@@ -515,7 +515,7 @@ export class AuthService {
     async getFacebookAuthUrl(): Promise<string> {
         const appId = this.configService.get<string>('FACEBOOK_APP_ID');
         const configId = this.configService.get<string>('FACEBOOK_CONFIG_ID');
-        const redirectUri = `${this.configService.get<string>('BACKEND_URL') || 'https://api.shopsync.studio'}/auth/facebook/callback`;
+        const redirectUri = `${this.configService.get<string>('BACKEND_URL') || 'https://api.shopsync.it.com'}/auth/facebook/callback`;
 
         // Using Facebook Login for Business flow with config_id
         return `https://www.facebook.com/v24.0/dialog/oauth?client_id=${appId}&redirect_uri=${encodeURIComponent(redirectUri)}&config_id=${configId}&response_type=code&scope=email,public_profile`;
@@ -524,7 +524,7 @@ export class AuthService {
     async handleFacebookCallback(code: string): Promise<{ access_token: string }> {
         const appId = this.configService.get<string>('FACEBOOK_APP_ID');
         const appSecret = this.configService.get<string>('FACEBOOK_APP_SECRET') || this.configService.get<string>('FB_APP_SECRET');
-        const redirectUri = `${this.configService.get<string>('BACKEND_URL') || 'https://api.shopsync.studio'}/auth/facebook/callback`;
+        const redirectUri = `${this.configService.get<string>('BACKEND_URL') || 'https://api.shopsync.it.com'}/auth/facebook/callback`;
 
         try {
             // 1. Exchange code for access token
