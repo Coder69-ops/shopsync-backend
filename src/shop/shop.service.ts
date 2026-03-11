@@ -300,8 +300,22 @@ export class ShopService {
     // Check if shop exists
     await this.findOne(id);
 
+    // Instead of immediate deletion, schedule it for 7 days
+    return (this.db.shop as any).update({
+      where: { id },
+      data: {
+        isDeletionScheduled: true,
+        deletionScheduledAt: new Date(),
+      },
+    });
+  }
+
+  async permanentlyDelete(id: string) {
     // Hard delete all related data in a transaction to ensure permanent wipe
     return this.db.$transaction(async (tx) => {
+      // 0. Delete AI insights (Fixing the reported FK error)
+      await tx.aiInsight.deleteMany({ where: { shopId: id } });
+
       // 1. Delete transactional/usage data
       await tx.orderItem.deleteMany({ where: { order: { shopId: id } } });
       await tx.order.deleteMany({ where: { shopId: id } });

@@ -57,6 +57,20 @@ export class AuthService {
             throw new UnauthorizedException('Invalid credentials');
         }
 
+        // Restore shop if it was scheduled for deletion
+        if ((user.shop as any)?.isDeletionScheduled) {
+            console.log(`[AUTH] Restoring shop ${user.shopId} as user logged in.`);
+            await this.db.shop.update({
+                where: { id: user.shopId || undefined },
+                data: {
+                    isDeletionScheduled: false,
+                    deletionScheduledAt: null,
+                } as any,
+            });
+            // Update local object to reflect restored state in JWT
+            (user.shop as any).isDeletionScheduled = false;
+        }
+
         if (!user.isEmailVerified && user.role !== 'SUPERADMIN') {
             console.log(`[AUTH] Step 5.5: LOGIN FAILED - Email not verified`);
             throw new UnauthorizedException({
