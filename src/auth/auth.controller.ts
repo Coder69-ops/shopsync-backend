@@ -90,6 +90,12 @@ export class AuthController {
     return this.authService.facebookAuth(accessToken);
   }
 
+  @HttpCode(HttpStatus.OK)
+  @Post('facebook/deletion')
+  async facebookDeletion(@Body('signed_request') signedRequest: string) {
+    return this.authService.handleFacebookDeletion(signedRequest);
+  }
+
 
   @UseGuards(JwtAuthGuard)
   @HttpCode(HttpStatus.OK)

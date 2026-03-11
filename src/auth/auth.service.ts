@@ -9,6 +9,7 @@ import axios from 'axios';
 import { v4 as uuidv4 } from 'uuid';
 import { Queue } from 'bullmq';
 import { InjectQueue } from '@nestjs/bullmq';
+import * as crypto from 'crypto';
 
 @Injectable()
 export class AuthService {
@@ -624,5 +625,63 @@ export class AuthService {
         const { password, ...safeUser } = user;
 
         return { access_token: token, user: safeUser };
+    }
+
+    async handleFacebookDeletion(signedRequest: string) {
+        try {
+            const [encodedSig, payload] = signedRequest.split('.');
+            const secret = this.configService.get<string>('FACEBOOK_APP_SECRET') || '';
+
+            // Decode signature
+            const sig = Buffer.from(encodedSig.replace(/-/g, '+').replace(/_/g, '/'), 'base64');
+            // Decode payload
+            const data = JSON.parse(Buffer.from(payload.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString());
+
+            // Verify signature
+            const expectedSig = crypto
+                .createHmac('sha256', secret)
+                .update(payload)
+                .digest();
+
+            if (!crypto.timingSafeEqual(sig, expectedSig)) {
+                throw new BadRequestException('Invalid signature');
+            }
+
+            const facebookId = data.user_id;
+            console.log(`[AUTH] Processing data deletion for Facebook ID: ${facebookId}`);
+
+            // Find user and mark as inactive or delete
+            const user = await this.db.user.findUnique({
+                where: { facebookId },
+                include: { shop: true }
+            });
+
+            if (user) {
+                // We'll use our existing shop deletion logic
+                if (user.shopId) {
+                    await this.db.shop.update({
+                        where: { id: user.shopId },
+                        data: {
+                            isActive: false,
+                            isDeletionScheduled: true,
+                            deletionScheduledAt: new Date(),
+                        } as any
+                    });
+                }
+                await this.db.user.update({
+                    where: { id: user.id },
+                    data: { isActive: false }
+                });
+            }
+
+            const confirmationCode = uuidv4();
+            return {
+                url: `${this.configService.get('FRONTEND_URL') || 'https://www.shopsync.it.com'}/privacy`,
+                confirmation_code: confirmationCode
+            };
+        } catch (error) {
+            console.error('[AUTH] Data Deletion Error:', error.message);
+            throw new BadRequestException('Failed to process deletion request');
+        }
     }
 }
