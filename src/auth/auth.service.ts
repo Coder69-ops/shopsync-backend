@@ -523,11 +523,12 @@ export class AuthService {
 
     async handleFacebookCallback(code: string): Promise<{ access_token: string }> {
         const appId = this.configService.get<string>('FACEBOOK_APP_ID');
-        const appSecret = this.configService.get<string>('FACEBOOK_APP_SECRET') || this.configService.get<string>('FB_APP_SECRET');
+        const appSecret = this.configService.get<string>('FACEBOOK_APP_SECRET');
         const redirectUri = `${this.configService.get<string>('BACKEND_URL') || 'https://api.shopsync.it.com'}/auth/facebook/callback`;
 
         try {
             // 1. Exchange code for access token
+            console.log('[AUTH] Exchanging Facebook code for token with appId:', appId ? 'PRESENT' : 'MISSING');
             const tokenResponse = await axios.get('https://graph.facebook.com/v24.0/oauth/access_token', {
                 params: {
                     client_id: appId,

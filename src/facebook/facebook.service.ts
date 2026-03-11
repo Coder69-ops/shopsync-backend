@@ -36,7 +36,7 @@ export class FacebookService {
   async exchangeCodeForAccessToken(code: string, redirectUri?: string): Promise<string> {
     try {
       const appId = this.configService.get<string>('FACEBOOK_APP_ID');
-      const appSecret = this.configService.get<string>('FACEBOOK_APP_SECRET') || this.configService.get<string>('FB_APP_SECRET');
+      const appSecret = this.configService.get<string>('FACEBOOK_APP_SECRET');
 
       if (!appId || !appSecret) {
         this.logger.error('Missing FACEBOOK_APP_ID or FACEBOOK_APP_SECRET');

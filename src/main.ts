@@ -29,8 +29,6 @@ async function bootstrap() {
     process.env.VERCEL_URL,
     'https://shopsync.it.com',
     'https://www.shopsync.it.com',
-    'https://shopsync.studio',
-    'https://www.shopsync.studio',
   ].filter(Boolean) as string[];
 
   app.enableCors({
