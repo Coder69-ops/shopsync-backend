@@ -141,6 +141,21 @@ export class SuperAdminController {
     return this.superAdminService.toggleShopSuspension(shopId, user.id);
   }
 
+  @Get('deletion-requests')
+  async getDeletionRequests() {
+    return this.superAdminService.getPendingDeletions();
+  }
+
+  @Post('deletion-requests/:id/approve')
+  async approveDeletion(@CurrentUser() admin: User, @Param('id') id: string) {
+    return this.superAdminService.approveDeletion(id, admin.id);
+  }
+
+  @Post('deletion-requests/:id/reject')
+  async rejectDeletion(@CurrentUser() admin: User, @Param('id') id: string) {
+    return this.superAdminService.rejectDeletion(id, admin.id);
+  }
+
   @Get('health')
   async getHealth() {
     return this.healthService.getSystemStatus();

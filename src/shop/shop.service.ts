@@ -296,16 +296,19 @@ export class ShopService {
     };
   }
 
-  async remove(id: string) {
+  async remove(id: string, reason?: string) {
     // Check if shop exists
     await this.findOne(id);
 
-    // Instead of immediate deletion, schedule it for 7 days
+    // Instead of immediate deletion, schedule it
+    // It will wait for superadmin approval
     return (this.db.shop as any).update({
       where: { id },
       data: {
         isDeletionScheduled: true,
         deletionScheduledAt: new Date(),
+        deletionReason: reason,
+        deletionApproved: false,
       },
     });
   }

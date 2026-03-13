@@ -188,8 +188,10 @@ model Shop {
   knowledgeBases KnowledgeBase[]
 
   // Deletion logic
-  isDeletionScheduled   Boolean   @default(false)
-  deletionScheduledAt  DateTime?
+  isDeletionScheduled Boolean   @default(false)
+  deletionScheduledAt DateTime?
+  deletionReason      String?
+  deletionApproved    Boolean   @default(false)
 
   // SaaS Billing Gateways
   merchantId         String?             // LemonSqueezy/Paddle Merchant/Customer ID

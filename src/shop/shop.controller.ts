@@ -79,12 +79,16 @@ export class ShopController {
 
   @Roles(UserRole.SUPERADMIN, UserRole.ADMIN)
   @Delete(':id')
-  @ApiOperation({ summary: 'Delete shop permanently (SUPERADMIN or OWNER)' })
-  async remove(@Param('id') id: string, @Req() req: any) {
+  @ApiOperation({ summary: 'Delete shop (SUPERADMIN or OWNER)' })
+  async remove(
+    @Param('id') id: string,
+    @Req() req: any,
+    @Body('reason') reason?: string,
+  ) {
     // Access Control: Admin can only delete their own shop
     if (req.user.role === UserRole.ADMIN && req.user.shopId !== id) {
       throw new UnauthorizedException('You can only delete your own shop');
     }
-    return this.shopService.remove(id);
+    return this.shopService.remove(id, reason);
   }
 }
