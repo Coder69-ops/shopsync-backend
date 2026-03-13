@@ -317,7 +317,13 @@ export class WebhookProcessor extends WorkerHost {
         }
 
         try {
-          // 1. Get or Create Customer (CRM)
+          // 1. Fetch Customer Profile
+          const profile = await this.facebookService.getUserProfile(
+            messaging.sender.id,
+            shop.accessToken
+          );
+
+          // 2. Get or Create Customer (CRM)
           const customer = await this.db.customer.upsert({
             where: {
               shopId_externalId_platform: {
@@ -326,19 +332,18 @@ export class WebhookProcessor extends WorkerHost {
                 platform: 'FACEBOOK',
               },
             },
-            update: {},
+            update: {
+              name: profile?.name || undefined,
+              profilePic: profile?.profilePic || undefined,
+            },
             create: {
               shopId: shop.id,
               externalId: messaging.sender.id,
               platform: 'FACEBOOK',
-              name: 'Messenger User',
+              name: profile?.name || 'Messenger User',
+              profilePic: profile?.profilePic || '',
             },
           });
-          // 2. Fetch Customer Profile if not fetching already
-          const profile = await this.facebookService.getUserProfile(
-            messaging.sender.id,
-            shop.fbPageAccessToken
-          );
 
           // 3. Get or Create Conversation
           const conversation = await this.db.conversation.upsert({
