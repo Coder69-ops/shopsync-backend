@@ -155,6 +155,14 @@ export class WebhookProcessor extends WorkerHost {
             },
           });
 
+          const canReply = await this.usageService.canSendMessage(shop.id, shop);
+          if (!canReply) {
+            this.logger.warn(
+              `Shop ${shop.id} message limit reached. Skipping comment reply.`,
+            );
+            continue;
+          }
+
           // 3. Generate AI Response (Structured)
           const aiResult = await this.aiService.processComment(
             message,
@@ -163,14 +171,6 @@ export class WebhookProcessor extends WorkerHost {
           );
 
           const { publicReply, privateReply, shouldSendDm } = aiResult;
-
-          const canReply = await this.usageService.canSendMessage(shop.id, shop);
-          if (!canReply) {
-            this.logger.warn(
-              `Shop ${shop.id} message limit reached. Skipping comment reply.`,
-            );
-            continue;
-          }
 
           if (aiResult.thought !== 'Fallback due to error' && aiResult.thought !== 'Trial Expired') {
             await this.db.usageLog.create({
@@ -317,14 +317,8 @@ export class WebhookProcessor extends WorkerHost {
         }
 
         try {
-          // 1. Fetch Customer Profile
-          const profile = await this.facebookService.getUserProfile(
-            messaging.sender.id,
-            shop.accessToken
-          );
-
-          // 2. Get or Create Customer (CRM)
-          const customer = await this.db.customer.upsert({
+          // 1. Check if Customer exists (to avoid Graph API rate limit)
+          let customer = await this.db.customer.findUnique({
             where: {
               shopId_externalId_platform: {
                 shopId: shop.id,
@@ -332,20 +326,41 @@ export class WebhookProcessor extends WorkerHost {
                 platform: 'FACEBOOK',
               },
             },
-            update: {
-              name: profile?.name || undefined,
-              profilePic: profile?.profilePic || undefined,
+          });
+
+          // 2. Fetch Profile ONLY if missing
+          let profile = null;
+          if (!customer || !customer.name || customer.name === 'Messenger User') {
+            this.logger.log(`Fetching new Facebook profile for PSID: ${messaging.sender.id}`);
+            profile = await this.facebookService.getUserProfile(
+              messaging.sender.id,
+              shop.accessToken
+            );
+          }
+
+          // 3. Upsert Customer (Safe against race conditions)
+          customer = await this.db.customer.upsert({
+            where: {
+              shopId_externalId_platform: {
+                shopId: shop.id,
+                externalId: messaging.sender.id,
+                platform: 'FACEBOOK',
+              },
             },
+            update: profile ? {
+              name: profile.name || undefined,
+              profilePic: profile.profilePic || undefined,
+            } : {},
             create: {
               shopId: shop.id,
               externalId: messaging.sender.id,
               platform: 'FACEBOOK',
-              name: profile?.name || 'Messenger User',
-              profilePic: profile?.profilePic || '',
+              name: profile?.name || customer?.name || 'Messenger User',
+              profilePic: profile?.profilePic || customer?.profilePic || '',
             },
           });
 
-          // 3. Get or Create Conversation
+          // 4. Get or Create Conversation
           const conversation = await this.db.conversation.upsert({
             where: {
               shopId_psid: {
@@ -353,15 +368,15 @@ export class WebhookProcessor extends WorkerHost {
                 psid: messaging.sender.id,
               },
             },
-            update: {
-              customerName: profile?.name || undefined,
-              customerAvatar: profile?.profilePic || undefined,
-            },
+            update: profile ? {
+              customerName: profile.name || undefined,
+              customerAvatar: profile.profilePic || undefined,
+            } : {},
             create: {
               shopId: shop.id,
               psid: messaging.sender.id,
-              customerName: profile?.name || 'Facebook User',
-              customerAvatar: profile?.profilePic || '',
+              customerName: customer.name || 'Facebook User',
+              customerAvatar: customer.profilePic || '',
             },
           });
 
