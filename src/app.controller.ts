@@ -10,9 +10,9 @@ export class AppController {
     return this.appService.getHello();
   }
 
-  @Get('metrics')
-  getMetrics() {
-    return this.appService.getMetrics();
+  @Get('system/status')
+  getSystemStatus() {
+    return this.appService.getSystemMetrics();
   }
 
   @Get('privacy')

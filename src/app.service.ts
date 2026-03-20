@@ -75,7 +75,7 @@ export class AppService implements OnApplicationBootstrap {
     };
   }
 
-  getMetrics() {
+  getSystemMetrics() {
     return {
       name: 'ShopSync AI API',
       version: '1.1.0',
