@@ -74,4 +74,16 @@ export class AppService implements OnApplicationBootstrap {
       message: 'Welcome to the ShopSync backend infrastructure. All systems operational.',
     };
   }
+
+  getMetrics() {
+    return {
+      name: 'ShopSync AI API',
+      version: '1.1.0',
+      status: 'up',
+      uptime: Math.floor(process.uptime()),
+      memory: process.memoryUsage(),
+      cpu: process.cpuUsage(),
+      timestamp: new Date().toISOString(),
+    };
+  }
 }

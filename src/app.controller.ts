@@ -10,6 +10,11 @@ export class AppController {
     return this.appService.getHello();
   }
 
+  @Get('metrics')
+  getMetrics() {
+    return this.appService.getMetrics();
+  }
+
   @Get('privacy')
   @Header('Content-Type', 'text/html')
   getPrivacyPolicy(): string {
