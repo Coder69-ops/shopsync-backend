@@ -849,65 +849,93 @@ export class OrderService {
     sixMonthsAgo.setDate(1);
     sixMonthsAgo.setHours(0, 0, 0, 0);
 
-    const [orders, totalConversations, repeatsData, withOrdersCount] = await Promise.all([
+    // Optimized aggregations using database
+    const [
+      aggregateStats,
+      activeOrdersCount,
+      revenueHistory,
+      trafficSourceDistribution,
+      statusDistribution,
+      totalConversations,
+      repeatsData,
+      withOrdersCount,
+      recentOrders
+    ] = await Promise.all([
+      // 1. Total Revenue & Total Orders
+      this.db.order.aggregate({
+        where: { shopId },
+        _sum: { totalPrice: true },
+        _count: { _all: true },
+      }),
+      // 2. Active Orders
+      this.db.order.count({
+        where: {
+          shopId,
+          status: { notIn: ['DELIVERED', 'CANCELLED', 'RETURNED'] },
+        },
+      }),
+      // 3. Revenue History (Last 6 Months)
+      this.db.order.findMany({
+        where: {
+          shopId,
+          createdAt: { gte: sixMonthsAgo },
+        },
+        select: { totalPrice: true, createdAt: true },
+      }),
+      // 4. Traffic Source Distribution
+      this.db.order.groupBy({
+        by: ['source'],
+        where: { shopId },
+        _count: { _all: true },
+      }),
+      // 5. Order Status Distribution
+      this.db.order.groupBy({
+        by: ['status'],
+        where: { shopId },
+        _count: { _all: true },
+      }),
+      // 6. Total Conversations
+      this.db.conversation.count({ where: { shopId } }),
+      // 7. Repeat Customers
+      this.db.order.groupBy({
+        by: ['customerId'],
+        where: { shopId, customerId: { not: null } },
+        _count: { _all: true },
+        having: { customerId: { _count: { gt: 1 } } },
+      }),
+      // 8. Total Customers with Orders
+      this.db.order.groupBy({
+        by: ['customerId'],
+        where: { shopId, customerId: { not: null } },
+      }),
+      // 9. Recent 5 Orders for Dashboard
       this.db.order.findMany({
         where: { shopId },
         orderBy: { createdAt: 'desc' },
-      }),
-      this.db.conversation.count({
-        where: { shopId },
-      }),
-      this.db.order.groupBy({
-        by: ['customerId'],
-        where: {
-          shopId,
-          customerId: { not: null },
-        },
-        _count: { _all: true },
-        having: {
-          customerId: {
-            _count: { gt: 1 },
-          },
-        },
-      }),
-      this.db.order.groupBy({
-        by: ['customerId'],
-        where: {
-          shopId,
-          customerId: { not: null },
-        },
+        take: 5,
+        include: { orderItems: true }
       }),
     ]);
 
-    const totalRevenue = orders.reduce(
-      (sum: number, o: any) => sum + (Number(o.totalPrice) || 0),
-      0,
-    );
-    const totalOrders = orders.length;
-    const activeOrders = orders.filter(
-      (o: any) => o.status !== 'DELIVERED' && o.status !== 'CANCELLED' && o.status !== 'RETURNED',
-    ).length;
-
+    const totalRevenue = Number(aggregateStats._sum.totalPrice) || 0;
+    const totalOrders = aggregateStats._count._all;
     const avgOrderValue = totalOrders > 0 ? totalRevenue / totalOrders : 0;
 
     // Customer Retention: % of customers with > 1 order
-    const repeatCustomers = repeatsData.length;
-    const customerRetention = withOrdersCount.length > 0
-      ? (repeatCustomers / withOrdersCount.length) * 100
+    const repeatCustomersCount = repeatsData.length;
+    const totalCustomersWithOrders = withOrdersCount.length;
+    const customerRetention = totalCustomersWithOrders > 0
+      ? (repeatCustomersCount / totalCustomersWithOrders) * 100
       : 0;
 
     // Conversion Rate: Orders / Conversations
     const conversionRate = totalConversations > 0 ? (totalOrders / totalConversations) * 100 : 0;
 
-    // Traffic Source Distribution
-    const trafficSource = {
-      AI: orders.filter((o) => o.source === 'AI').length,
-      MANUAL: orders.filter((o) => o.source === 'MANUAL').length,
-      WEB: orders.filter((o) => o.source === 'WEB').length,
-    };
-
-    // Recent 5 orders for dashboard
-    const recentOrders = orders.slice(0, 5);
+    // Traffic Source Distribution Map
+    const trafficMap: Record<string, number> = { AI: 0, MANUAL: 0, WEB: 0 };
+    trafficSourceDistribution.forEach(item => {
+      trafficMap[item.source] = item._count._all;
+    });
 
     // Calculate Monthly Revenue (Last 6 Months)
     const revenueChart = new Array(6)
@@ -921,7 +949,7 @@ export class OrderService {
         };
       });
 
-    orders.forEach((o: any) => {
+    revenueHistory.forEach((o: any) => {
       const date = new Date(o.createdAt);
       const diffMonths =
         (now.getFullYear() - date.getFullYear()) * 12 +
@@ -932,27 +960,40 @@ export class OrderService {
     });
 
     // Order Status Distribution for Pie Chart
-    const statusMap = orders.reduce((acc, o) => {
-      acc[o.status] = (acc[o.status] || 0) + 1;
-      return acc;
-    }, {} as Record<string, number>);
-
-    const orderStatusDistribution = Object.entries(statusMap).map(([name, value]) => ({
-      name,
-      value,
+    const orderStatusDistribution = statusDistribution.map(item => ({
+      name: item.status,
+      value: item._count._all,
     }));
 
-    // --- AI-Driven Insights (Advanced Metrics) ---
+    // --- AI-Driven Insights (Sampled for Performance) ---
 
-    // 1. Customer Sentiment Analysis
-    // Logic: Count "High Return Risk" as angry/annoyed, etc. or keywords in lastMessage
-    const conversations = await this.db.conversation.findMany({
-      where: { shopId },
-      select: { lastMessage: true, tags: true }
-    });
+    const [recentConvs, recentAiOrders, recentRegionalOrders] = await Promise.all([
+      // Sample last 200 conversations for sentiment
+      this.db.conversation.findMany({
+        where: { shopId },
+        select: { lastMessage: true, tags: true },
+        orderBy: { updatedAt: 'desc' },
+        take: 200
+      }),
+      // Sample last 100 AI orders for haggling index
+      this.db.order.findMany({
+        where: { shopId, source: 'AI' },
+        select: { rawExtract: true },
+        orderBy: { createdAt: 'desc' },
+        take: 100
+      }),
+      // Sample last 500 orders for regional breakdown
+      this.db.order.findMany({
+        where: { shopId, customerAddress: { not: null } },
+        select: { customerAddress: true },
+        orderBy: { createdAt: 'desc' },
+        take: 500
+      })
+    ]);
 
+    // 1. Customer Sentiment Analysis (on Sample)
     let happy = 0, neutral = 0, annoyed = 0, angry = 0;
-    conversations.forEach(conv => {
+    recentConvs.forEach(conv => {
       const msg = (conv.lastMessage || '').toLowerCase();
       if (conv.tags.includes('VIP') || msg.includes('thank') || msg.includes('valo') || msg.includes('khushi')) happy++;
       else if (conv.tags.includes('High Return Risk') || msg.includes('dennai') || msg.includes('kharap') || msg.includes('late')) angry++;
@@ -962,19 +1003,17 @@ export class OrderService {
     const totalSentiment = happy + neutral + annoyed + angry;
     const sentimentScore = totalSentiment > 0 ? (happy * 100 + neutral * 70 + annoyed * 40 + angry * 10) / totalSentiment : 70;
 
-    // 2. Haggling Index (Desi Business Metric)
-    // Logic: AI-sourced orders where rawExtract contains negotiation keywords or lower price than product
-    const aiOrders = orders.filter(o => o.source === 'AI');
-    const hagglingOrders = aiOrders.filter(o => {
+    // 2. Haggling Index (on Sample)
+    const hagglingOrders = recentAiOrders.filter(o => {
       const msg = JSON.stringify(o.rawExtract || {}).toLowerCase();
       return msg.includes('discount') || msg.includes('kom') || msg.includes('koto rakha');
     }).length;
-    const hagglingIndex = aiOrders.length > 0 ? (hagglingOrders / aiOrders.length) * 100 : 0;
+    const hagglingIndex = recentAiOrders.length > 0 ? (hagglingOrders / recentAiOrders.length) * 100 : 0;
 
-    // 3. Regional Sales Breakdown (BD Districts)
+    // 3. Regional Sales Breakdown (on Sample)
     const districts = ['Dhaka', 'Chittagong', 'Sylhet', 'Rajshahi', 'Khulna', 'Barisal', 'Rangpur', 'Gazipur', 'Narayanganj'];
     const regionalMap: Record<string, number> = {};
-    orders.forEach(o => {
+    recentRegionalOrders.forEach(o => {
       const addr = (o.customerAddress || '').toLowerCase();
       const match = districts.find(d => addr.includes(d.toLowerCase()));
       if (match) regionalMap[match] = (regionalMap[match] || 0) + 1;
@@ -985,32 +1024,27 @@ export class OrderService {
       .sort((a, b) => b.value - a.value)
       .slice(0, 5);
 
-    // 4. Missed Opportunities (Stock Gaps)
-    // Placeholder logic: frequent keywords in conversations NOT in products
-    const missedOpportunities = [
-      { name: 'Saree', interest: 12 },
-      { name: 'Panjabi', interest: 8 },
-      { name: 'Hijab', interest: 5 }
-    ];
-
     return {
       totalRevenue,
-      activeOrders,
+      activeOrders: activeOrdersCount,
       totalOrders,
       avgOrderValue,
       customerRetention,
       conversionRate,
-      trafficSource,
+      trafficSource: trafficMap,
       recentOrders,
       revenueChart,
       orderStatusDistribution,
-      // New AI Metrics
       aiInsights: {
         sentimentScore: Math.round(sentimentScore),
         sentimentDistribution: { happy, neutral, annoyed, angry },
         hagglingIndex: Math.round(hagglingIndex),
         regionalSales,
-        missedOpportunities
+        missedOpportunities: [
+          { name: 'Saree', interest: 12 },
+          { name: 'Panjabi', interest: 8 },
+          { name: 'Hijab', interest: 5 }
+        ]
       }
     };
   }
