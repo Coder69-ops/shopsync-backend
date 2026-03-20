@@ -67,9 +67,9 @@ export class AppService implements OnApplicationBootstrap {
 
   getHello() {
     return {
-      name: 'ShopSync API',
+      name: 'ShopSync AI API',
       status: 'online',
-      version: '1.0.0',
+      version: '1.1.0',
       timestamp: new Date().toISOString(),
       message: 'Welcome to the ShopSync backend infrastructure. All systems operational.',
     };

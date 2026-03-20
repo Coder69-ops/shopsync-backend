@@ -71,10 +71,21 @@ async function bootstrap() {
   const config = new DocumentBuilder()
     .setTitle('ShopSync AI API')
     .setDescription('The backend API for ShopSync Store')
-    .setVersion('1.0')
+    .setVersion('1.1.0')
     .addTag('shop')
     .build();
   const document = SwaggerModule.createDocument(app, config);
+
+  const basicAuth = require('express-basic-auth');
+  const authMiddleware = basicAuth({
+    users: {
+      [process.env.BULL_BOARD_USER || 'admin']: process.env.BULL_BOARD_PASSWORD || 'ShopSync!@#2026',
+    },
+    challenge: true,
+  });
+
+  // Secure Swagger UI
+  app.use('/api', authMiddleware);
   SwaggerModule.setup('api', app, document);
 
   // 5. Bull Board
@@ -89,15 +100,9 @@ async function bootstrap() {
     serverAdapter: serverAdapter,
   });
 
-  const basicAuth = require('express-basic-auth');
   app.use(
     '/admin/queues',
-    basicAuth({
-      users: {
-        [process.env.BULL_BOARD_USER || 'admin']: process.env.BULL_BOARD_PASSWORD || 'ShopSync!@#2026',
-      },
-      challenge: true,
-    }),
+    authMiddleware,
     serverAdapter.getRouter()
   );
 
