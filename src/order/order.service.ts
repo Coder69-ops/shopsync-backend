@@ -61,6 +61,7 @@ export class OrderService {
     const aiConfig = (shop?.aiConfig as any) || {};
     const deliveryInside = Number(aiConfig.deliveryChargeInside) || 80;
     const deliveryOutside = Number(aiConfig.deliveryChargeOutside) || 150;
+    const isFreeDelivery = aiConfig.freeDeliveryActive === true;
 
     // NEW: Check Order Limit
     const canCreateOrder = await this.usageService.canCreateOrder(shopId, shop);
@@ -71,8 +72,9 @@ export class OrderService {
     }
 
     // Determine base delivery charge
-    const defaultDeliveryCharge =
-      data.delivery_type === 'outside' ? deliveryOutside : deliveryInside;
+    const defaultDeliveryCharge = isFreeDelivery
+      ? 0
+      : (data.delivery_type === 'outside' ? deliveryOutside : deliveryInside);
 
     // ATOMICITY FIX: Wrap everything in a transaction
     const createdOrder = await this.db.$transaction(async (tx: any) => {
@@ -80,6 +82,9 @@ export class OrderService {
       const orderItemsToCreate: any[] = [];
 
       // 1. Handle Inventory & Product Total
+      // Track if any product fails to match
+      let hasMissingProducts = false;
+
       if (Array.isArray(data.items) && data.items.length > 0) {
         for (const item of data.items) {
           const product = await tx.product.findFirst({
@@ -107,6 +112,7 @@ export class OrderService {
               total: itemTotal,
             });
             productSubTotal += itemTotal;
+            hasMissingProducts = true;
             continue;
           }
 
@@ -142,17 +148,20 @@ export class OrderService {
           unitPrice: 0,
           total: 0,
         });
+        hasMissingProducts = true;
       }
 
       // 2. Finalize Pricing
-      // Priority: 1. data.deliveryFee (from AI) -> 2. defaultDeliveryCharge (from Shop Settings)
-      const finalDeliveryFee = data.deliveryFee !== undefined ? Number(data.deliveryFee) : defaultDeliveryCharge;
+      // Priority: 1. defaultDeliveryCharge (from Shop Settings) -> 2. data.deliveryFee (from AI but should be ignored)
+      const finalDeliveryFee = defaultDeliveryCharge;
 
       // Subtotal is what we calculated from products.
       const finalSubTotal = productSubTotal;
 
       // Total Price is the sum.
       const finalTotalPrice = finalSubTotal + finalDeliveryFee;
+      
+      const finalStatus = hasMissingProducts ? 'PENDING' : (data.status || 'CONFIRMED');
 
       // 3. Create Order
       const order = await tx.order.create({
@@ -180,7 +189,7 @@ export class OrderService {
             deliveryChargeApplied: finalDeliveryFee,
             calculatedSubTotal: finalSubTotal
           },
-          status: 'CONFIRMED',
+          status: finalStatus,
           source: ['MANUAL', 'AI', 'WEB'].includes(data.source) ? data.source : 'AI',
           appointmentDate: data.appointmentDate ? new Date(data.appointmentDate) : null,
           serviceNotes: data.serviceNotes || null,

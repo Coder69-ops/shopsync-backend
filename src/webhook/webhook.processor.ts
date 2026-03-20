@@ -625,7 +625,7 @@ export class WebhookProcessor extends WorkerHost {
                     customerName: customerName,
                     customerPhone: customerPhone,
                     customerAddress: customerAddress,
-                    items: JSON.stringify(items),
+                    items: items,
                     totalPrice:
                       orderData.total_price || orderData.total_amount || 0,
                     deliveryFee: deliveryFee, // Pass the extracted fee

@@ -355,15 +355,14 @@ export class AiService {
       businessRules += `
       - For PHYSICAL items (products): You MUST collect the customer's Full Name, Phone Number, and Full Delivery Address (including Area/City).
       - Do NOT finalize an order until all three are provided.
-      - Add Delivery Charge: Inside Dhaka ${deliveryInside} BDT, Outside Dhaka ${deliveryOutside} BDT.`;
+      - NEVER calculate the delivery charge or total price. Just extract the data.`;
     }
 
     if (hasServices) {
       businessRules += `
       - For SERVICES: You MUST collect Name, Phone Number, and Preferred Date/Time for the service.
       - DO NOT ask for a delivery address for services.
-      - DO NOT add any delivery charges for services. The total is just the service fee.
-      - delivery_charge MUST be 0 in the JSON output.
+      - NEVER calculate any total price. Just extract the data.
       - Confirm the appointment time clearly.`;
     }
 
@@ -462,14 +461,12 @@ export class AiService {
       User: "Habib, 01711223344, Mirpur 10. Watch ta den 2 ta."
       AI Output: {
         "intent": "CREATE_ORDER",
-        "reply_message": "Order confirmed! 2 ta T900 Watch pathiye dicchi Mirpur 10 a. Total: [Calculated Price + Delivery] BDT.",
+        "reply_message": "Order confirmed! 2 ta T900 Watch pathiye dicchi Mirpur 10 a. Ekjon representative apnake call diy detail confirm korbe.",
         "data": {
           "customer_name": "Habib",
           "phone": "01711223344",
           "address": "Mirpur 10",
-          "items": [{ "product_name": "T900 Ultra Smartwatch", "quantity": 2 }],
-          "total_price": [Price + Delivery],
-          "delivery_type": "inside"
+          "items": [{ "product_name": "T900 Ultra Smartwatch", "quantity": 2 }]
         }
       }
 
@@ -482,9 +479,7 @@ export class AiService {
           "phone": "01711...",
           "address": "N/A", 
           "appointment_date": "Tomorrow 10:00 AM",
-          "items": [{ "product_name": "Website Design", "quantity": 1 }],
-          "total_price": 5000,
-          "delivery_type": "inside"
+          "items": [{ "product_name": "Website Design", "quantity": 1 }]
         }
       }
 
@@ -498,9 +493,7 @@ export class AiService {
            "phone": "string",
            "address": "string",
            "appointment_date": "string (For Services)",
-           "items": [{ "product_name": "Exact Name from Inventory", "quantity": number }],
-           "total_price": number,
-           "delivery_type": "inside" | "outside",
+           "items": [{ "product_name": "Exact Name from Inventory", "variation": "string (size/color if mentioned)", "quantity": number }],
            "order_id": "string",
            "return_reason": "string",
            "area_name": "string"
