@@ -67,7 +67,7 @@ export class OrderService {
     const canCreateOrder = await this.usageService.canCreateOrder(shopId, shop);
     if (!canCreateOrder) {
       throw new Error(
-        'Your monthly order limit has been reached. Please upgrade to continue.',
+        'Your order limit for the current cycle has been reached. Please upgrade to continue.',
       );
     }
 
@@ -849,6 +849,13 @@ export class OrderService {
     sixMonthsAgo.setDate(1);
     sixMonthsAgo.setHours(0, 0, 0, 0);
 
+    const shop = await this.db.shop.findUnique({
+      where: { id: shopId },
+      select: { plan: true, trialEndsAt: true, subscriptionEndsAt: true }
+    });
+
+    const { start: startDate, end: endDate } = await this.usageService.getUsagePeriod(shop || { id: shopId, plan: 'FREE' });
+
     // Optimized aggregations using database
     const [
       aggregateStats,
@@ -859,7 +866,9 @@ export class OrderService {
       totalConversations,
       repeatsData,
       withOrdersCount,
-      recentOrders
+      recentOrders,
+      currentMonthMessages,
+      currentMonthOrders
     ] = await Promise.all([
       // 1. Total Revenue & Total Orders
       this.db.order.aggregate({
@@ -914,6 +923,21 @@ export class OrderService {
         orderBy: { createdAt: 'desc' },
         take: 5,
         include: { orderItems: true }
+      }),
+      // 10. Current Month AI Messages Usage
+      this.db.usageLog.count({
+        where: {
+          shopId,
+          type: 'MESSAGE_AI',
+          createdAt: { gte: startDate },
+        },
+      }),
+      // 11. Current Month Orders Usage
+      this.db.order.count({
+        where: {
+          shopId,
+          createdAt: { gte: startDate },
+        },
       }),
     ]);
 
@@ -1028,6 +1052,8 @@ export class OrderService {
       totalRevenue,
       activeOrders: activeOrdersCount,
       totalOrders,
+      currentMonthOrders,
+      totalMessages: currentMonthMessages,
       avgOrderValue,
       customerRetention,
       conversionRate,
@@ -1035,6 +1061,8 @@ export class OrderService {
       recentOrders,
       revenueChart,
       orderStatusDistribution,
+      usagePeriodStart: startDate,
+      usagePeriodEnd: endDate,
       aiInsights: {
         sentimentScore: Math.round(sentimentScore),
         sentimentDistribution: { happy, neutral, annoyed, angry },

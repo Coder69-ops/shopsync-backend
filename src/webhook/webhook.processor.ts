@@ -419,7 +419,7 @@ export class WebhookProcessor extends WorkerHost {
           const canReply = await this.usageService.canSendMessage(shop.id, shop);
           if (!canReply) {
             const limitMessage =
-              'Your monthly AI message limit has been reached. Please upgrade your plan to continue using AI features.';
+              'Your AI message limit for the current cycle has been reached. Please upgrade your plan to continue using AI features.';
             await this.facebookService.sendMessage(
               messaging.sender.id,
               limitMessage,
@@ -633,58 +633,68 @@ export class WebhookProcessor extends WorkerHost {
                   this.logger.log(`Applying AI-persisted delivery fee: ${deliveryFee} for PSID: ${messaging.sender.id}`);
                 }
 
-                // Create Order
-                const createdOrder = await this.orderService.create(
-                  {
-                    customerId: customer.id,
-                    customerName: customerName,
-                    customerPhone: customerPhone,
-                    customerAddress: customerAddress,
-                    items: items,
-                    totalPrice:
-                      orderData.total_price || orderData.total_amount || 0,
-                    deliveryFee: deliveryFee, // Pass the extracted fee
-                    status: 'PENDING',
-                    psid: messaging.sender.id,
-                    source: 'AI',
-                    rawExtract: {
-                      ...orderData,
-                      shipping_details: shippingDetails,
-                      deliveryChargeApplied: deliveryFee,
+                try {
+                  // Create Order
+                  const createdOrder = await this.orderService.create(
+                    {
+                      customerId: customer.id,
+                      customerName: customerName,
+                      customerPhone: customerPhone,
+                      customerAddress: customerAddress,
+                      items: items,
+                      totalPrice:
+                        orderData.total_price || orderData.total_amount || 0,
+                      deliveryFee: deliveryFee, // Pass the extracted fee
+                      status: 'PENDING',
                       psid: messaging.sender.id,
+                      source: 'AI',
+                      rawExtract: {
+                        ...orderData,
+                        shipping_details: shippingDetails,
+                        deliveryChargeApplied: deliveryFee,
+                        psid: messaging.sender.id,
+                      },
                     },
-                  },
-                  shop.id,
-                );
+                    shop.id,
+                  );
 
-                await this.db.usageLog.create({
-                  data: {
-                    id: crypto.randomUUID(),
-                    shopId: shop.id,
-                    type: 'ORDER_EXTRACTED',
-                  },
-                });
+                  await this.db.usageLog.create({
+                    data: {
+                      id: crypto.randomUUID(),
+                      shopId: shop.id,
+                      type: 'ORDER_EXTRACTED',
+                    },
+                  });
 
-                // Generate Detailed Confirmation (Final Check)
-                const rawExtract = createdOrder.rawExtract as any;
-                const deliveryCharge = rawExtract?.deliveryChargeApplied || 0;
-                const totalAmount = Number(createdOrder.totalPrice);
+                  // Generate Detailed Confirmation (Final Check)
+                  const rawExtract = createdOrder.rawExtract as any;
+                  const deliveryCharge = rawExtract?.deliveryChargeApplied || 0;
+                  const totalAmount = Number(createdOrder.totalPrice);
 
-                let itemsListString = '';
-                if (Array.isArray(items)) {
-                  itemsListString = items
-                    .map((i: any) => `${i.product_name} x${i.quantity}`)
-                    .join('\n- ');
+                  let itemsListString = '';
+                  if (Array.isArray(items)) {
+                    itemsListString = items
+                      .map((i: any) => `${i.product_name} x${i.quantity}`)
+                      .join('\n- ');
+                  }
+
+                  responseText =
+                    `✅ *Order Confirmed!*\n\n` +
+                    `🆔 Order ID: #${createdOrder.id.slice(0, 8).toUpperCase()}\n` +
+                    `👤 Name: ${createdOrder.customerName}\n` +
+                    `📞 Phone: ${createdOrder.customerPhone}\n` +
+                    `📍 Address: ${createdOrder.customerAddress}\n\n` +
+                    `📦 **Items:**\n- ${itemsListString}\n\n` +
+                    `Thank you for shopping with us! Our human agent will contact you shortly to confirm your order details and delivery.`;
+                } catch (orderError) {
+                  this.logger.warn(`Order creation failed for shop ${shop.id}: ${orderError.message}`);
+                  if (orderError.message.includes('limit for the current cycle')) {
+                    responseText = `⚠️ ${orderError.message}`;
+                  } else {
+                    // Re-throw if it's a different kind of error (e.g. database down)
+                    throw orderError;
+                  }
                 }
-
-                responseText =
-                  `✅ *Order Confirmed!*\n\n` +
-                  `🆔 Order ID: #${createdOrder.id.slice(0, 8).toUpperCase()}\n` +
-                  `👤 Name: ${createdOrder.customerName}\n` +
-                  `📞 Phone: ${createdOrder.customerPhone}\n` +
-                  `📍 Address: ${createdOrder.customerAddress}\n\n` +
-                  `📦 **Items:**\n- ${itemsListString}\n\n` +
-                  `Thank you for shopping with us! Our human agent will contact you shortly to confirm your order details and delivery.`;
               }
             }
           } catch (error) {
