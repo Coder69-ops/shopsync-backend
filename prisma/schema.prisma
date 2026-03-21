@@ -91,6 +91,7 @@ model User {
   onboardingCompleted Boolean        @default(false)
   hasSeenTour         Boolean        @default(false)
   facebookId          String?        @unique // Facebook SSO ID
+  googleId            String?        @unique // Google SSO ID
   notifications       Notification[]
 
   // Preferences

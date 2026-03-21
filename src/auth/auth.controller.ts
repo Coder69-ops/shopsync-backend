@@ -91,6 +91,12 @@ export class AuthController {
   }
 
   @HttpCode(HttpStatus.OK)
+  @Post('google')
+  async googleLogin(@Body('accessToken') accessToken: string) {
+    return this.authService.googleAuth(accessToken);
+  }
+
+  @HttpCode(HttpStatus.OK)
   @Post('facebook/deletion')
   async facebookDeletion(@Body('signed_request') signedRequest: string) {
     return this.authService.handleFacebookDeletion(signedRequest);

@@ -527,6 +527,128 @@ export class AuthService {
         }
     }
 
+    async googleAuth(accessToken: string): Promise<{ access_token: string }> {
+        console.log(
+            `[AUTH] Google SSO Attempt with token length: ${accessToken?.length}`,
+        );
+
+        try {
+            // 1. Verify token with Google API
+            const googleResponse = await axios.get(
+                'https://www.googleapis.com/oauth2/v3/userinfo',
+                {
+                    headers: { Authorization: `Bearer ${accessToken}` },
+                }
+            );
+            const { sub: googleId, name: googleName, email: googleEmail, picture: googlePicture } = googleResponse.data;
+            const name = googleName || 'ShopSync User';
+            const email = googleEmail;
+
+            if (!googleId) {
+                throw new UnauthorizedException('Invalid Google token');
+            }
+
+            console.log(
+                `[AUTH] Google verified: ${name} (${email || 'No email'}) [${googleId}]`,
+            );
+
+            // 2. Find user by googleId or email
+            let user = await this.db.user.findFirst({
+                where: {
+                    OR: [
+                        { googleId: googleId },
+                        { email: email || 'never-match-this-random-string' },
+                    ],
+                },
+                include: { shop: true },
+            });
+
+            // 3. If not found, create new user + shop
+            if (!user) {
+                console.log(
+                    `[AUTH] User not found. Creating new user for Google ID: ${googleId}`,
+                );
+
+                const finalEmail = email || `${googleId}@google.com`;
+
+                user = await this.db.$transaction(async (tx: any) => {
+                    const shop = await tx.shop.create({
+                        data: {
+                            name: name.includes('User') ? `${name}` : `${name}'s Shop`,
+                            email: finalEmail,
+                            plan: 'FREE',
+                            isActive: true,
+                            brandColor: '#F59E0B',
+                        },
+                    });
+
+                    return await tx.user.create({
+                        data: {
+                            email: finalEmail,
+                            password: await bcrypt.hash(Math.random().toString(36), 10), // Random pass for SSO users
+                            role: 'ADMIN',
+                            shopId: shop.id,
+                            googleId: googleId,
+                            profilePic: googlePicture,
+                            onboardingCompleted: false,
+                            isEmailVerified: true,
+                            trialEndsAt: null,
+                        },
+                        include: { shop: true },
+                    });
+                });
+            } else if (!user.googleId) {
+                // Link official Google ID to existing email account if not linked
+                await this.db.user.update({
+                    where: { id: user.id },
+                    data: { 
+                        googleId: googleId,
+                        isEmailVerified: true,
+                        ...(googlePicture && !user.profilePic ? { profilePic: googlePicture } : {}) 
+                    },
+                });
+            }
+
+            // Final check to satisfy TypeScript
+            if (!user) {
+                throw new UnauthorizedException(
+                    'User account could not be identified or created',
+                );
+            }
+
+            // 4. Generate JWT
+            const payload = {
+                sub: user.id,
+                email: user.email,
+                profilePic: user.profilePic,
+                role: user.role,
+                shopId: user.shopId,
+                trialEndsAt: user.trialEndsAt,
+                subscriptionEndsAt: (user as any).shop?.subscriptionEndsAt,
+                plan:
+                    user.role === 'SUPERADMIN'
+                        ? 'PRO'
+                        : (user as any).shop?.plan || 'FREE',
+                onboardingCompleted: user.onboardingCompleted,
+                hasSeenTour: user.hasSeenTour,
+                isActive: user.isActive,
+                shopIsActive: (user as any).shop?.isActive ?? true,
+                themePreference: (user as any).themePreference,
+                languagePreference: (user as any).languagePreference,
+                emailNotifications: (user as any).emailNotifications,
+            };
+
+            const token = await this.jwtService.signAsync(payload);
+            return { access_token: token };
+        } catch (error: any) {
+            console.error(
+                '[AUTH] Google SSO Error:',
+                error.response?.data || error.message,
+            );
+            throw new UnauthorizedException('Google authentication failed');
+        }
+    }
+
     async markTourAsSeen(userId: string) {
         await this.db.user.update({
             where: { id: userId },
