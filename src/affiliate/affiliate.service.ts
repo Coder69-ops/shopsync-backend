@@ -6,9 +6,14 @@ import * as bcrypt from 'bcrypt';
 export class AffiliateService {
   constructor(private readonly db: DatabaseService) {}
 
-  async requestPayout(affiliateId: string, amount: number, paymentMethod: string) {
+  async requestPayout(affiliateId: string, amount: number, paymentMethodId: string, payoutDetails: string) {
     if (amount <= 0) {
       throw new BadRequestException('Amount must be positive');
+    }
+
+    const method = await this.db.payoutMethod.findUnique({ where: { id: paymentMethodId } });
+    if (!method || !method.isActive) {
+      throw new BadRequestException('Invalid or inactive payout method');
     }
 
     return this.db.$transaction(async (tx) => {
@@ -48,7 +53,9 @@ export class AffiliateService {
         data: {
           affiliateId,
           amount,
-          paymentMethod,
+          paymentMethod: method.name, // Display name
+          paymentMethodId: method.id,
+          payoutDetails, // Store snapshot
           status: 'PENDING',
         }
       });
@@ -117,7 +124,7 @@ export class AffiliateService {
     return this.db.payout.findMany({
       include: {
         affiliate: {
-          select: { id: true, name: true, email: true }
+          select: { id: true, name: true, email: true, payoutDetails: true }
         }
       },
       orderBy: { createdAt: 'desc' }
@@ -184,6 +191,7 @@ export class AffiliateService {
   }
 
   async createAffiliate(data: any) {
+    // ... logic remains same as requested previously
     const { name, email, password, promoCode } = data;
 
     const existingUser = await this.db.user.findUnique({ where: { email } });
@@ -221,5 +229,53 @@ export class AffiliateService {
         promoCodes: true
       }
     });
+  }
+
+  // New Methods for Ecosystem Expansion
+
+  async updatePayoutDetails(affiliateId: string, details: any) {
+    return this.db.user.update({
+      where: { id: affiliateId },
+      data: { payoutDetails: details }
+    });
+  }
+
+  async getPayoutMethods(onlyActive: boolean = true) {
+    return this.db.payoutMethod.findMany({
+      where: onlyActive ? { isActive: true } : {},
+      orderBy: { name: 'asc' }
+    });
+  }
+
+  async createPayoutMethod(data: { name: string; type: string; icon?: string }) {
+    return this.db.payoutMethod.create({ data });
+  }
+
+  async updatePayoutMethod(id: string, data: any) {
+    return this.db.payoutMethod.update({
+      where: { id },
+      data
+    });
+  }
+
+  async deletePayoutMethod(id: string) {
+    return this.db.payoutMethod.delete({ where: { id } });
+  }
+
+  async getAffiliateProfile(id: string) {
+      return this.db.user.findUnique({
+          where: { id },
+          select: {
+              id: true,
+              name: true,
+              email: true,
+              payoutDetails: true,
+              role: true,
+              createdAt: true,
+              themePreference: true,
+              languagePreference: true,
+              profilePic: true
+          }
+      });
   }
 }

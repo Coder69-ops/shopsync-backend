@@ -95,6 +95,7 @@ model User {
   facebookId          String?        @unique // Facebook SSO ID
   googleId            String?        @unique // Google SSO ID
   notifications       Notification[]
+  payoutDetails       Json?          // E.g., { "bkash": "018...", "nagad": "019...", "bank": { "name": "...", "acc": "..." } }
 
   // Preferences
   themePreference    String  @default("dark") // "light", "dark", "system"
@@ -807,10 +808,24 @@ model Payout {
   affiliate       User         @relation(fields: [affiliateId], references: [id])
   amount          Decimal
   status          PayoutStatus @default(PENDING)
-  paymentMethod   String
+  paymentMethod   String       // Keeping this for historical or manual override
+  paymentMethodId String?      // Linked to formal PayoutMethod
+  payoutMethod    PayoutMethod? @relation(fields: [paymentMethodId], references: [id])
+  payoutDetails   String?      // Snapshot of credentials (e.g., number)
   rejectionReason String?
   paidAt          DateTime?
 
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model PayoutMethod {
+  id        String   @id @default(uuid())
+  name      String   @unique // bKash, Nagad, etc.
+  type      String   @default("MOBILE") // MOBILE, BANK, etc.
+  icon      String?  // Lucide icon name
+  isActive  Boolean  @default(true)
+  payouts   Payout[]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
