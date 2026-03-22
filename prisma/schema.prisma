@@ -220,6 +220,7 @@ model Shop {
   referredByPromoId String?
   referredByPromo   PromoCode? @relation(fields: [referredByPromoId], references: [id])
   renewalCount      Int        @default(0)
+  isRecycled        Boolean    @default(false)
 }
 
 // 1. The Dynamic Plan Configuration Model (Managed by Superadmin)
@@ -251,6 +252,7 @@ model Payment {
   transactionId   String        @unique
   status          PaymentStatus @default(PENDING)
   rejectionReason String?
+  isSuspicious    Boolean       @default(false)
   createdAt       DateTime      @default(now())
 
   // Affiliate System

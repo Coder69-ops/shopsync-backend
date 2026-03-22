@@ -69,7 +69,7 @@ export class AffiliateService {
           promoCodes: {
             include: { 
                 payments: { where: { status: 'APPROVED' } },
-                shops: { select: { id: true, name: true, renewalCount: true, createdAt: true } }
+                shops: { select: { id: true, name: true, renewalCount: true, createdAt: true, isRecycled: true } }
             }
           },
           payouts: { orderBy: { createdAt: 'desc' } }
@@ -111,23 +111,55 @@ export class AffiliateService {
       
       const availableBalance = lifetimeEarnings - requestedEarnings;
 
+      const isSecure = !affiliate.promoCodes.some(pc => 
+        pc.payments.some(p => p.isSuspicious) || 
+        pc.shops.some(s => s.isRecycled)
+      );
+
       return {
           lifetimeEarnings,
           availableBalance,
           totalReferrals,
           payouts: affiliate.payouts,
-          referrals
+          referrals,
+          isSecure
       };
   }
 
   async getAllPayouts() {
-    return this.db.payout.findMany({
+    const payouts = await this.db.payout.findMany({
       include: {
         affiliate: {
-          select: { id: true, name: true, email: true, payoutDetails: true }
+          select: { 
+            id: true, 
+            name: true, 
+            email: true, 
+            payoutDetails: true,
+            promoCodes: {
+              include: {
+                shops: { select: { isRecycled: true } },
+                payments: { where: { isSuspicious: true }, select: { id: true } }
+              }
+            }
+          }
         }
       },
       orderBy: { createdAt: 'desc' }
+    });
+
+    return payouts.map(p => {
+      const hasSuspiciousPayments = p.affiliate.promoCodes.some(pc => pc.payments.length > 0);
+      const hasRecycledShops = p.affiliate.promoCodes.some(pc => pc.shops.some(s => s.isRecycled));
+      
+      // Clean up the deep include for the response if needed, 
+      // but keeping it simple for now by just adding fraudAlerts.
+      return {
+        ...p,
+        fraudAlerts: {
+          suspiciousPayment: hasSuspiciousPayments,
+          recycledShop: hasRecycledShops
+        }
+      };
     });
   }
 

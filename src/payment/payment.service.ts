@@ -58,6 +58,21 @@ export class PaymentService {
       throw new BadRequestException('Transaction ID already submitted');
     }
 
+    // Technique 2: Payment Footprint (The bKash/Nagad Trail)
+    const otherShopWithSameNumber = await this.db.payment.findFirst({
+      where: {
+        senderNumber: data.senderNumber,
+        shopId: { not: shopId },
+      },
+    });
+
+    const isSuspicious = !!otherShopWithSameNumber;
+    if (isSuspicious) {
+      this.logger.warn(
+        `Suspicious payment detected! Sender number ${data.senderNumber} previously used for a different shop. Shop ID: ${shopId}`,
+      );
+    }
+
     try {
       const payment: any = await (this.db.payment as any).create({
         data: {
@@ -69,6 +84,7 @@ export class PaymentService {
           promoCodeId: data.promoCodeId,
           currency: 'BDT', // Manual payments are always BDT
           status: 'PENDING',
+          isSuspicious,
         },
         include: { shop: true },
       });
@@ -192,10 +208,12 @@ export class PaymentService {
       let renewalCount = shop.renewalCount + 1;
       let invoiceNumber = renewalCount;
 
-      if (shop.referredByPromoId) {
+      if (shop.referredByPromoId && !shop.isRecycled) {
         if (renewalCount === 1) affiliateCommission = amount * 0.50;
         else if (renewalCount === 2) affiliateCommission = amount * 0.25;
         else if (renewalCount === 3) affiliateCommission = amount * 0.125;
+      } else if (shop.isRecycled) {
+        this.logger.log(`Bypassing affiliate commission for recycled shop: ${shop.id}`);
       }
 
       // 1. Update Payment

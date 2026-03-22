@@ -15,9 +15,12 @@ import { FacebookService } from './facebook.service';
 import { DatabaseService } from '../database/database.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
+import { Logger } from '@nestjs/common';
 
 @Controller('facebook')
 export class FacebookController {
+  private readonly logger = new Logger(FacebookController.name);
+
   constructor(
     private readonly facebookService: FacebookService,
     private readonly db: DatabaseService,
@@ -148,7 +151,7 @@ export class FacebookController {
       );
     }
 
-    // Global Uniqueness Check: Ensure no OTHER shop has this page linked
+    // Technique 1: The Silver Bullet (Facebook Page ID Tracking)
     const existingShopWithPage = await this.db.shop.findFirst({
       where: {
         id: { not: user.shopId },
@@ -160,9 +163,22 @@ export class FacebookController {
     });
 
     if (existingShopWithPage) {
-      throw new HttpException(
-        'This Facebook page is already connected to another ShopSync account.',
-        HttpStatus.BAD_REQUEST,
+      // If the older shop is still active and NOT scheduled for deletion, block to prevent multi-shop overlap
+      if (!existingShopWithPage.isDeletionScheduled && existingShopWithPage.isActive) {
+        throw new HttpException(
+          'This Facebook page is already connected to another active ShopSync account.',
+          HttpStatus.CONFLICT,
+        );
+      }
+
+      // If the older shop was deleted/scheduled, allow the new connection but mark as RECYCLED
+      await this.db.shop.update({
+        where: { id: user.shopId },
+        data: { isRecycled: true },
+      });
+
+      this.logger.warn(
+        `Recycled Facebook Page ID detected: ${trimmedPageId}. Commission for Shop ${user.shopId} will be bypassed.`,
       );
     }
 
