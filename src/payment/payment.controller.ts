@@ -36,6 +36,7 @@ export class PaymentController {
       method: string;
       senderNumber: string;
       transactionId: string;
+      promoCodeId?: string;
     },
   ) {
     if (!user.shopId) throw new BadRequestException('User has no shop');

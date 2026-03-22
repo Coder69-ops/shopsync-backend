@@ -44,6 +44,7 @@ enum OrderStatus {
 enum UserRole {
   ADMIN // Shop Owner
   SUPERADMIN // Platform Owner (You)
+  AFFILIATE
 }
 
 enum SubscriptionPlan {
@@ -79,6 +80,7 @@ model User {
   id         String   @id @default(uuid())
   email      String   @unique
   password   String // Hashed
+  name       String?
   profilePic String?
   role       UserRole @default(ADMIN)
   shopId     String? // Null for Superadmin
@@ -103,6 +105,10 @@ model User {
   isEmailVerified          Boolean   @default(false)
   verificationToken        String?
   verificationTokenExpires DateTime?
+
+  // Affiliate
+  promoCodes PromoCode[]
+  payouts    Payout[]
 }
 
 model Shop {
@@ -155,9 +161,9 @@ model Shop {
 
   // Shopify Integration
   shopifyUrl                  String?
-  shopifyAccessToken         String?
-  shopifyClientId            String?
-  shopifyClientSecret        String?
+  shopifyAccessToken          String?
+  shopifyClientId             String?
+  shopifyClientSecret         String?
   shopifyAccessTokenExpiresAt DateTime?
 
   // AI Settings
@@ -195,11 +201,11 @@ model Shop {
   deletionApproved    Boolean   @default(false)
 
   // SaaS Billing Gateways
-  merchantId         String?             // LemonSqueezy/Paddle Merchant/Customer ID
-  subscriptionId     String?             // LemonSqueezy/Paddle Subscription ID
-  subscriptionStatus SubscriptionStatus? // ACTIVE, PAST_DUE, CANCELED, TRIALING
-  subscriptionPlan   String?             // 'Starter', 'Pro Business'
-  paddleCustomerId   String?
+  merchantId           String? // LemonSqueezy/Paddle Merchant/Customer ID
+  subscriptionId       String? // LemonSqueezy/Paddle Subscription ID
+  subscriptionStatus   SubscriptionStatus? // ACTIVE, PAST_DUE, CANCELED, TRIALING
+  subscriptionPlan     String? // 'Starter', 'Pro Business'
+  paddleCustomerId     String?
   paddleSubscriptionId String?
 
   // Superadmin Overrides (Null means fallback to PlanConfig)
@@ -208,6 +214,11 @@ model Shop {
 
   // Feature Overrides (Useful for custom Enterprise clients)
   customFeatures Json? // e.g. { "canUseVoiceAI": true }
+
+  // Affiliate System
+  referredByPromoId String?
+  referredByPromo   PromoCode? @relation(fields: [referredByPromoId], references: [id])
+  renewalCount      Int        @default(0)
 }
 
 // 1. The Dynamic Plan Configuration Model (Managed by Superadmin)
@@ -240,6 +251,12 @@ model Payment {
   status          PaymentStatus @default(PENDING)
   rejectionReason String?
   createdAt       DateTime      @default(now())
+
+  // Affiliate System
+  promoCodeId         String?
+  promoCode           PromoCode? @relation(fields: [promoCodeId], references: [id])
+  invoiceNumber       Int        @default(1)
+  affiliateCommission Decimal    @default(0)
 }
 
 enum PaymentStatus {
@@ -324,7 +341,7 @@ model Customer {
   shopId String
   shop   Shop   @relation(fields: [shopId], references: [id])
 
-  orders Order[]
+  orders            Order[]
   campaignsReceived CampaignRecipient[]
 
   createdAt DateTime @default(now())
@@ -375,16 +392,16 @@ model Product {
 }
 
 model Conversation {
-  id          String   @id @default(uuid())
-  shopId      String
-  shop        Shop     @relation(fields: [shopId], references: [id])
+  id             String   @id @default(uuid())
+  shopId         String
+  shop           Shop     @relation(fields: [shopId], references: [id])
   psid           String // User's Page Scoped ID (Facebook User ID)
   customerName   String?
   customerAvatar String?
   status         String   @default("ACTIVE") // ACTIVE, PAUSED
   lastMessage    String?
   tags           String[] @default([]) // e.g. ["VIP", "High Return Risk"]
-  internalNotes  Json?    // Array of { adminId, note, createdAt }
+  internalNotes  Json? // Array of { adminId, note, createdAt }
   updatedAt      DateTime @updatedAt
 
   messages Message[]
@@ -462,7 +479,7 @@ model Order {
   shipmentStatus       String? // Courier-reported status
 
   // External Sync
-  externalOrderId      String? // Track if pushed to WooCommerce/Shopify
+  externalOrderId String? // Track if pushed to WooCommerce/Shopify
 
   // ROI Attribution
   marketingCampaignId String?
@@ -570,11 +587,11 @@ model SystemConfig {
   broadcastMessage String?
 
   // 4. Notification Controls
-  enableMerchantEmails   Boolean @default(true)
-  enableAdminAlerts      Boolean @default(true)
-  emailSenderName        String  @default("ShopSync")
-  emailSupportContact    String  @default("support@komolina.store")
-  lowStockThreshold      Int     @default(5)
+  enableMerchantEmails Boolean @default(true)
+  enableAdminAlerts    Boolean @default(true)
+  emailSenderName      String  @default("ShopSync")
+  emailSupportContact  String  @default("support@komolina.store")
+  lowStockThreshold    Int     @default(5)
 
   // System Email Provider
   emailProvider String? @default("RESEND") // RESEND, SMTP
@@ -584,7 +601,7 @@ model SystemConfig {
   smtpPassword  String?
   smtpFrom      String?
 
-  globalEmailTemplate    String? @db.Text
+  globalEmailTemplate String? @db.Text
 
   welcomeEmailSubject    String  @default("Welcome to ShopSync! 🚀")
   welcomeEmailBody       String? @db.Text
@@ -595,8 +612,8 @@ model SystemConfig {
   adminAlertEmailSubject String  @default("New Shop Registration 🏢")
   adminAlertEmailBody    String? @db.Text
 
-  verifyEmailSubject      String  @default("Verify your ShopSync account")
-  verifyEmailBody         String? @db.Text
+  verifyEmailSubject         String  @default("Verify your ShopSync account")
+  verifyEmailBody            String? @db.Text
   forgotPasswordEmailSubject String  @default("Reset your ShopSync password")
   forgotPasswordEmailBody    String? @db.Text
 
@@ -710,55 +727,90 @@ model EmailPreset {
   globalEmailTemplate String @db.Text
 
   welcomeEmailSubject String @default("Welcome!")
-  welcomeEmailBody    String @db.Text @default("")
+  welcomeEmailBody    String @default("") @db.Text
 
   newOrderEmailSubject String @default("New Order")
-  newOrderEmailBody    String @db.Text @default("")
+  newOrderEmailBody    String @default("") @db.Text
 
   lowStockEmailSubject String @default("Low Stock")
-  lowStockEmailBody    String @db.Text @default("")
+  lowStockEmailBody    String @default("") @db.Text
 
   adminAlertEmailSubject String @default("System Alert")
-  adminAlertEmailBody    String @db.Text @default("")
+  adminAlertEmailBody    String @default("") @db.Text
 
-  verifyEmailSubject      String @default("Verify Email")
-  verifyEmailBody         String @db.Text @default("")
+  verifyEmailSubject         String @default("Verify Email")
+  verifyEmailBody            String @default("") @db.Text
   forgotPasswordEmailSubject String @default("Reset Password")
-  forgotPasswordEmailBody    String @db.Text @default("")
+  forgotPasswordEmailBody    String @default("") @db.Text
 
   // Customer Flow
   orderConfirmationSubject String @default("Order Confirmed")
-  orderConfirmationBody    String @db.Text @default("")
+  orderConfirmationBody    String @default("") @db.Text
   orderCancelledSubject    String @default("Order Cancelled")
-  orderCancelledBody       String @db.Text @default("")
+  orderCancelledBody       String @default("") @db.Text
   orderReturnedSubject     String @default("Order Returned")
-  orderReturnedBody        String @db.Text @default("")
+  orderReturnedBody        String @default("") @db.Text
   shippingUpdateSubject    String @default("Shipping Update")
-  shippingUpdateBody       String @db.Text @default("")
+  shippingUpdateBody       String @default("") @db.Text
 
   // Billing & Trial
   subscriptionActivatedSubject String @default("Subscription Active")
-  subscriptionActivatedBody    String @db.Text @default("")
+  subscriptionActivatedBody    String @default("") @db.Text
   paymentReceivedSubject       String @default("Payment Received")
-  paymentReceivedBody          String @db.Text @default("")
+  paymentReceivedBody          String @default("") @db.Text
   paymentRejectedSubject       String @default("Payment Rejected")
-  paymentRejectedBody          String @db.Text @default("")
+  paymentRejectedBody          String @default("") @db.Text
   trialExpirySubject           String @default("Trial Expiring")
-  trialExpiryBody              String @db.Text @default("")
+  trialExpiryBody              String @default("") @db.Text
   trialExpiredSubject          String @default("Trial Expired")
-  trialExpiredBody             String @db.Text @default("")
+  trialExpiredBody             String @default("") @db.Text
 
   createdAt DateTime @default(now())
 }
 
 model AiInsight {
-  id        String   @id @default(uuid())
-  shopId    String
-  shop      Shop     @relation(fields: [shopId], references: [id])
-  type      String   // SENTIMENT, HAGGLING, REGIONAL, MISSED_OPPORTUNITY, BATCH_ANALYSIS
-  value     Json     // Flexible storage for data points or Gemini's full analysis
-  date      DateTime @default(now())
+  id     String   @id @default(uuid())
+  shopId String
+  shop   Shop     @relation(fields: [shopId], references: [id])
+  type   String // SENTIMENT, HAGGLING, REGIONAL, MISSED_OPPORTUNITY, BATCH_ANALYSIS
+  value  Json // Flexible storage for data points or Gemini's full analysis
+  date   DateTime @default(now())
 
   @@index([shopId, type, date])
 }
 
+model PromoCode {
+  id              String  @id @default(uuid())
+  code            String  @unique
+  discountPercent Decimal @default(10.0)
+  isActive        Boolean @default(true)
+  affiliateId     String
+  affiliate       User    @relation(fields: [affiliateId], references: [id])
+
+  shops    Shop[]
+  payments Payment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+enum PayoutStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  PAID
+}
+
+model Payout {
+  id              String       @id @default(uuid())
+  affiliateId     String
+  affiliate       User         @relation(fields: [affiliateId], references: [id])
+  amount          Decimal
+  status          PayoutStatus @default(PENDING)
+  paymentMethod   String
+  rejectionReason String?
+  paidAt          DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}

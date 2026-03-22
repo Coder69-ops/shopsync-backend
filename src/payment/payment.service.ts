@@ -47,6 +47,7 @@ export class PaymentService {
       method: string;
       senderNumber: string;
       transactionId: string;
+      promoCodeId?: string;
     },
   ) {
     // Check if TrxID already exists
@@ -65,11 +66,19 @@ export class PaymentService {
           method: data.method,
           senderNumber: data.senderNumber,
           transactionId: data.transactionId,
+          promoCodeId: data.promoCodeId,
           currency: 'BDT', // Manual payments are always BDT
           status: 'PENDING',
         },
         include: { shop: true },
       });
+
+      if (data.promoCodeId) {
+        await (this.db.shop as any).update({
+          where: { id: shopId },
+          data: { referredByPromoId: data.promoCodeId }
+        });
+      }
 
       // Notify Merchant via Email
       if (payment.shop?.email) {
@@ -174,14 +183,33 @@ export class PaymentService {
       throw new BadRequestException('Already approved');
 
     return this.db.$transaction(async (tx) => {
+      const shop = await tx.shop.findUnique({ where: { id: payment.shopId } });
+      if (!shop) throw new NotFoundException('Shop not found');
+
+      // 0. Affiliate Commission Math (50-25-12.5 Rule)
+      const amount = Number(payment.amount);
+      let affiliateCommission = 0;
+      let renewalCount = shop.renewalCount + 1;
+      let invoiceNumber = renewalCount;
+
+      if (shop.referredByPromoId) {
+        if (renewalCount === 1) affiliateCommission = amount * 0.50;
+        else if (renewalCount === 2) affiliateCommission = amount * 0.25;
+        else if (renewalCount === 3) affiliateCommission = amount * 0.125;
+      }
+
       // 1. Update Payment
       const updatedPayment = await tx.payment.update({
         where: { id },
-        data: { status: 'APPROVED' },
+        data: { 
+          status: 'APPROVED',
+          invoiceNumber,
+          affiliateCommission,
+          promoCodeId: shop.referredByPromoId,
+        },
       });
 
       // 2. Determine Plan & Duration logic
-      const amount = Number(payment.amount);
       let plan: 'BASIC' | 'PRO' = 'BASIC'; // Default to Starter
       let durationDays = 30;
 
@@ -200,9 +228,6 @@ export class PaymentService {
       }
 
       // 3. Calculate New End Date
-      const shop = await tx.shop.findUnique({ where: { id: payment.shopId } });
-      if (!shop) throw new NotFoundException('Shop not found');
-
       const now = new Date();
       let currentEnd = shop.subscriptionEndsAt
         ? new Date(shop.subscriptionEndsAt)
@@ -218,6 +243,7 @@ export class PaymentService {
         data: {
           plan: plan,
           subscriptionEndsAt: newEnd,
+          renewalCount,
         },
       });
 

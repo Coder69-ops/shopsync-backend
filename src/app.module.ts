@@ -36,6 +36,8 @@ import { InboxModule } from './inbox/inbox.module';
 import { WooCommerceModule } from './woocommerce/woocommerce.module';
 import { ShopifyModule } from './shopify/shopify.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
+import { PromoModule } from './promo/promo.module';
+import { AffiliateModule } from './affiliate/affiliate.module';
 
 @Module({
   imports: [
@@ -99,6 +101,8 @@ import { WebhooksModule } from './webhooks/webhooks.module';
     WooCommerceModule,
     ShopifyModule,
     WebhooksModule,
+    PromoModule,
+    AffiliateModule,
   ],
   controllers: [AppController],
   providers: [

@@ -134,7 +134,7 @@ export class WebhooksController {
                     if (eventData.eventType === 'transaction.completed') {
                         const amountPaid = ((eventData.data as any).details?.totals?.total || 0) / 100;
                         const currency = (eventData.data as any).currencyCode || (eventData.data as any).currency_code || 'USD';
-                        const paymentTxId = eventData.eventId || subscriptionId;
+                        const paymentTxId = eventData.eventId || subscriptionId || Date.now().toString();
 
                         // Ensure payment record doesn't already exist for this event
                         const existingPayment = await this.prisma.payment.findUnique({
