@@ -5,10 +5,16 @@ import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { UserRole, User } from '@prisma/client';
 import { CurrentUser } from '../auth/current-user.decorator';
+import { ApplyAffiliateDto } from './dto/apply-affiliate.dto';
 
 @Controller('affiliate')
 export class AffiliateController {
   constructor(private readonly affiliateService: AffiliateService) {}
+
+  @Post('apply')
+  async apply(@Body() dto: ApplyAffiliateDto) {
+    return this.affiliateService.submitApplication(dto);
+  }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.AFFILIATE)
@@ -57,6 +63,23 @@ export class AffiliateController {
   async createAffiliate(@Body() body: any) {
     // In production, implement a strict DTO validation instead of 'any'
     return this.affiliateService.createAffiliate(body);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.SUPERADMIN)
+  @Get('admin/applications')
+  async getApplications() {
+    return this.affiliateService.getApplications();
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.SUPERADMIN)
+  @Patch('admin/applications/:id')
+  async updateApplicationStatus(
+    @Param('id') id: string,
+    @Body() body: { status: any; rejectionReason?: string }
+  ) {
+    return this.affiliateService.updateApplicationStatus(id, body.status, body.rejectionReason);
   }
 
   // Expansion Endpoints

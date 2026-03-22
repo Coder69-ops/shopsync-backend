@@ -541,12 +541,40 @@ export class EmailService {
   async sendTrialExpired(to: string) {
     const content = `
       <div style="text-align: center; margin-bottom: 24px;">
-        <div style="display: inline-block; background-color: #f4f4f5; color: #3f3f46; width: 64px; height: 64px; border-radius: 32px; line-height: 64px; font-size: 24px; margin-bottom: 16px;">🔒</div>
+        <div style="display: inline-block; background-color: #f4f4f5; color: #3f3f46; width: 64px; height: 64px; border-radius: 32px; line-height: 64px; font-size: 24px; margin-bottom: 16px;">Locked</div>
         <h1 style="color: #18181b; font-size: 24px; font-weight: 800; margin: 0 0 8px 0; letter-spacing: -0.025em;">Trial Expired</h1>
       </div>
       <p style="margin: 0 0 16px 0; text-align: center;">Your ShopSync Pro Trial has expired and your account has been moved to the Free plan. AI order processing and premium features are currently restricted.</p>
       <p style="margin: 0; text-align: center; font-weight: 600;">Upgrade now to reactivate your AI assistant and continue Growing.</p>`;
-    return this.sendEmail(to, `🔒 Your ShopSync Trial has Expired`, await this.getTemplate(content, `${this.frontendUrl}/billing`, 'Choose a Plan', undefined));
+    return this.sendEmail(to, `Locked Your ShopSync Trial has Expired`, await this.getTemplate(content, `${this.frontendUrl}/billing`, 'Choose a Plan', undefined));
   }
 
+  async sendAffiliateApproval(to: string, name: string) {
+    const content = `
+      <h1 style="color: #18181b; font-size: 24px; font-weight: 800; margin-top: 0; margin-bottom: 16px; letter-spacing: -0.025em;">অভিনন্দন! আপনি এখন ShopSync-এর গর্বিত অ্যাফিলিয়েট পার্টনার! 🚀</h1>
+      <p style="margin: 0 0 16px 0;">প্রিয় ${name},</p>
+      <p style="margin: 0 0 16px 0;">আমরা অত্যন্ত আনন্দের সাথে জানাচ্ছি যে ShopSync অ্যাফিলিয়েট প্রোগ্রামের জন্য আপনার আবেদনটি মঞ্জুর করা হয়েছে।</p>
+      <div style="background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 16px; padding: 24px; margin-bottom: 24px;">
+        <h3 style="margin: 0 0 12px 0; color: #166534; font-size: 18px; font-weight: 700;">আপনার পরবর্তী পদক্ষেপ:</h3>
+        <p style="margin: 0 0 12px 0;">নিচের বাটনে ক্লিক করে আপনার পাসওয়ার্ড সেট করুন এবং অ্যাফিলিয়েট ড্যাশবোর্ডে লগইন করুন:</p>
+      </div>
+      <p style="margin: 0;">এখনি কাজ শুরু করুন এবং প্যাসিভ ইনকাম এনজয় করুন!</p>
+    `;
+    const actionUrl = `${this.frontendUrl}/forgot-password`; 
+    return this.sendEmail(to, `অভিনন্দন! আপনার অ্যাফিলিয়েট আবেদন মঞ্জুর হয়েছে 🎉`, await this.getTemplate(content, actionUrl, 'সেট পাসওয়ার্ড ও লগইন করুন', undefined));
+  }
+
+  async sendAffiliateRejection(to: string, name: string, reason: string) {
+    const content = `
+      <h1 style="color: #18181b; font-size: 24px; font-weight: 800; margin-top: 0; margin-bottom: 16px; letter-spacing: -0.025em;">আপনার অ্যাফিলিয়েট আবেদন সংক্রান্ত আপডেট 📬</h1>
+      <p style="margin: 0 0 16px 0;">প্রিয় ${name},</p>
+      <p style="margin: 0 0 24px 0;">ShopSync অ্যাফিলিয়েট প্রোগ্রামে আগ্রহ দেখানোর জন্য ধন্যবাদ। গভীরভাবে পর্যালোচনার পর এই মুহূর্তে আমরা আপনার আবেদনটি গ্রহণ করতে পারছি না।</p>
+      <div style="background-color: #fef2f2; border: 1px solid #fecaca; border-left: 4px solid #ef4444; padding: 16px; margin-bottom: 24px; border-radius: 0 8px 8px 0;">
+        <p style="margin: 0 0 4px 0; font-size: 12px; font-weight: 700; color: #991b1b; text-transform: uppercase;">কারণ:</p>
+        <p style="margin: 0; color: #7f1d1d; font-weight: 500;">${reason}</p>
+      </div>
+      <p style="margin: 0;">আপনার ভবিষ্যতের জন্য শুভকামনা রইল।</p>
+    `;
+    return this.sendEmail(to, `আপনার অ্যাফিলিয়েট আবেদন সংক্রান্ত তথ্য`, await this.getTemplate(content), `affiliate-reject/${to}`);
+  }
 }

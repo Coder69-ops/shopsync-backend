@@ -782,6 +782,25 @@ model AiInsight {
   @@index([shopId, type, date])
 }
 
+model AffiliateApplication {
+  id              String   @id @default(uuid())
+  fullName        String
+  email           String
+  phone           String
+  websiteUrl      String?
+  promotionPlan   String   @db.Text
+  status          AffiliateApplicationStatus @default(PENDING)
+  rejectionReason String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+enum AffiliateApplicationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
 model PromoCode {
   id              String  @id @default(uuid())
   code            String  @unique

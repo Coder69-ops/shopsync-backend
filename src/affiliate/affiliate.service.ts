@@ -1,10 +1,18 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service';
 import * as bcrypt from 'bcrypt';
+import { AffiliateApplicationStatus } from '@prisma/client';
+import { ApplyAffiliateDto } from './dto/apply-affiliate.dto';
+
+import { v4 as uuidv4 } from 'uuid';
+import { EmailService } from '../email/email.service';
 
 @Injectable()
 export class AffiliateService {
-  constructor(private readonly db: DatabaseService) {}
+  constructor(
+    private readonly db: DatabaseService,
+    private readonly email: EmailService,
+  ) {}
 
   async requestPayout(affiliateId: string, amount: number, paymentMethodId: string, payoutDetails: string) {
     if (amount <= 0) {
@@ -309,5 +317,79 @@ export class AffiliateService {
               profilePic: true
           }
       });
+  }
+
+  async submitApplication(dto: ApplyAffiliateDto) {
+    return this.db.affiliateApplication.create({
+      data: {
+        ...dto,
+      },
+    });
+  }
+
+  async getApplications() {
+    return this.db.affiliateApplication.findMany({
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  async updateApplicationStatus(id: string, status: AffiliateApplicationStatus, rejectionReason?: string) {
+    const application = await this.db.affiliateApplication.findUnique({
+      where: { id },
+    });
+
+    if (!application) {
+      throw new BadRequestException('Application not found');
+    }
+
+    if (application.status !== 'PENDING') {
+      throw new BadRequestException('Application is already ' + application.status);
+    }
+
+    return this.db.$transaction(async (tx) => {
+      const updatedApp = await tx.affiliateApplication.update({
+        where: { id },
+        data: {
+          status,
+          rejectionReason,
+        },
+      });
+
+      if (status === 'APPROVED') {
+        // Check if user already exists
+        let user = await tx.user.findUnique({
+          where: { email: application.email },
+        });
+
+        if (user) {
+          // If user exists, update their role to AFFILIATE
+          await tx.user.update({
+            where: { id: user.id },
+            data: { role: 'AFFILIATE' },
+          });
+        } else {
+          // Create new user
+          const tempPassword = uuidv4();
+          const hashedPassword = await bcrypt.hash(tempPassword, 10);
+          
+          user = await tx.user.create({
+            data: {
+              email: application.email,
+              name: application.fullName,
+              password: hashedPassword,
+              role: 'AFFILIATE',
+            },
+          });
+        }
+
+        // Send approval email
+        await this.email.sendAffiliateApproval(application.email, application.fullName);
+      } else if (status === 'REJECTED') {
+        // Send rejection email
+        await this.email.sendAffiliateRejection(application.email, application.fullName, rejectionReason || 'আবেদনটি এই মুহূর্তে গ্রহণ করা সম্ভব হয়নি।');
+      }
+
+      return updatedApp;
+    });
   }
 }
