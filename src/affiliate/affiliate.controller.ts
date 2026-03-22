@@ -1,4 +1,4 @@
-import { Controller, Post, Body, UseGuards, Get, Patch, Param, Delete } from '@nestjs/common';
+import { Controller, Post, Body, UseGuards, Get, Patch, Param, Delete, Req, Res } from '@nestjs/common';
 import { AffiliateService } from './affiliate.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
@@ -14,6 +14,22 @@ export class AffiliateController {
   @Post('apply')
   async apply(@Body() dto: ApplyAffiliateDto) {
     return this.affiliateService.submitApplication(dto);
+  }
+
+  @Get('track/:code')
+  async trackClick(
+    @Param('code') code: string,
+    @Req() req: any,
+    @Res() res: any,
+  ) {
+    const ip = req.ip || req.connection.remoteAddress;
+    const userAgent = req.headers['user-agent'];
+    
+    await this.affiliateService.trackClick(code, ip, userAgent);
+    
+    // Redirect to landing page with the promo code in query if needed, 
+    // or just to the home page.
+    return res.redirect(`/?ref=${code}`);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -128,8 +144,28 @@ export class AffiliateController {
 
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.SUPERADMIN)
-  @Delete('admin/payout-methods/:id')
-  async deletePayoutMethod(@Param('id') id: string) {
-      return this.affiliateService.deletePayoutMethod(id);
+  @Get('admin/affiliate/:id')
+  async getAffiliateDetailsAdmin(@Param('id') id: string) {
+    return this.affiliateService.getAffiliateDetailsAdmin(id);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.SUPERADMIN)
+  @Post('admin/affiliate/:id/status')
+  async updateAffiliateStatus(
+    @Param('id') id: string,
+    @Body() body: { isActive: boolean }
+  ) {
+    return this.affiliateService.updateAffiliateStatus(id, body.isActive);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.SUPERADMIN)
+  @Delete('admin/affiliate/:id/promo/:codeId')
+  async revokePromoCode(
+    @Param('id') id: string,
+    @Param('codeId') codeId: string
+  ) {
+    return this.affiliateService.revokePromoCode(id, codeId);
   }
 }

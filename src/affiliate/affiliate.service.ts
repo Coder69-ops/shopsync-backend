@@ -71,67 +71,88 @@ export class AffiliateService {
   }
 
   async getDashboardStats(affiliateId: string) {
-    const affiliate = await this.db.user.findUnique({ 
-        where: { id: affiliateId },
-        include: { 
-          promoCodes: {
-            include: { 
-                payments: { where: { status: 'APPROVED' } },
-                shops: { select: { id: true, name: true, renewalCount: true, createdAt: true, isRecycled: true } }
-            }
+    const affiliate = await this.db.user.findUnique({
+      where: { id: affiliateId },
+      include: {
+        promoCodes: {
+          include: {
+            payments: { where: { status: 'APPROVED' } },
+            shops: { select: { id: true, name: true, renewalCount: true, createdAt: true, isRecycled: true } },
+            clicks: true,
           },
-          payouts: { orderBy: { createdAt: 'desc' } }
-        }
-      });
-  
-      if (!affiliate || affiliate.role !== 'AFFILIATE') {
-        throw new BadRequestException('Invalid affiliate user');
+        },
+        payouts: { orderBy: { createdAt: 'desc' } },
+      },
+    });
+
+    if (!affiliate || affiliate.role !== 'AFFILIATE') {
+      throw new BadRequestException('Invalid affiliate user');
+    }
+
+    let lifetimeEarnings = 0;
+    let totalReferrals = 0;
+    let totalClicks = 0;
+
+    const referrals = [];
+
+    for (const promo of affiliate.promoCodes) {
+      totalReferrals += promo.shops.length;
+      totalClicks += promo.clicks.length;
+
+      for (const shop of promo.shops) {
+        const shopPayments = promo.payments.filter((p) => p.shopId === shop.id);
+        const earnedFromShop = shopPayments.reduce((acc, p) => acc + Number(p.affiliateCommission), 0);
+        referrals.push({
+          shopName: shop.name,
+          renewalCount: shop.renewalCount,
+          earned: earnedFromShop,
+          joinedAt: shop.createdAt,
+        });
       }
 
-      let lifetimeEarnings = 0;
-      let totalReferrals = 0;
-      let pendingValue = 0;
-
-      const referrals = [];
-
-      for (const promo of affiliate.promoCodes) {
-          totalReferrals += promo.shops.length;
-          
-          for (const shop of promo.shops) {
-              const shopPayments = promo.payments.filter(p => p.shopId === shop.id);
-              const earnedFromShop = shopPayments.reduce((acc, p) => acc + Number(p.affiliateCommission), 0);
-              referrals.push({
-                  shopName: shop.name,
-                  renewalCount: shop.renewalCount,
-                  earned: earnedFromShop,
-                  joinedAt: shop.createdAt
-              });
-          }
-
-          for (const pay of promo.payments) {
-              lifetimeEarnings += Number(pay.affiliateCommission);
-          }
+      for (const pay of promo.payments) {
+        lifetimeEarnings += Number(pay.affiliateCommission);
       }
+    }
 
-      const requestedEarnings = affiliate.payouts
-        .filter(p => p.status !== 'REJECTED')
-        .reduce((acc, p) => acc + Number(p.amount), 0);
-      
-      const availableBalance = lifetimeEarnings - requestedEarnings;
+    const requestedEarnings = affiliate.payouts
+      .filter((p) => p.status !== 'REJECTED')
+      .reduce((acc, p) => acc + Number(p.amount), 0);
 
-      const isSecure = !affiliate.promoCodes.some(pc => 
-        pc.payments.some(p => p.isSuspicious) || 
-        pc.shops.some(s => s.isRecycled)
-      );
+    const availableBalance = lifetimeEarnings - requestedEarnings;
 
-      return {
-          lifetimeEarnings,
-          availableBalance,
-          totalReferrals,
-          payouts: affiliate.payouts,
-          referrals,
-          isSecure
-      };
+    const isSecure = !affiliate.promoCodes.some((pc) =>
+      pc.payments.some((p) => p.isSuspicious) || pc.shops.some((s) => s.isRecycled),
+    );
+
+    const conversionRate = totalClicks > 0 ? (totalReferrals / totalClicks) * 100 : 0;
+
+    return {
+      lifetimeEarnings,
+      availableBalance,
+      totalReferrals,
+      totalClicks,
+      conversionRate: Number(conversionRate.toFixed(2)),
+      payouts: affiliate.payouts,
+      referrals,
+      isSecure,
+    };
+  }
+
+  async trackClick(promoCode: string, ip?: string, userAgent?: string) {
+    const promo = await this.db.promoCode.findUnique({
+      where: { code: promoCode },
+    });
+
+    if (!promo || !promo.isActive) return null;
+
+    return this.db.promoClick.create({
+      data: {
+        promoCodeId: promo.id,
+        ip,
+        userAgent,
+      },
+    });
   }
 
   async getAllPayouts() {
@@ -390,6 +411,151 @@ export class AffiliateService {
       }
 
       return updatedApp;
+    });
+  }
+
+  async getAffiliateDetailsAdmin(id: string) {
+    const affiliate = await this.db.user.findUnique({
+      where: { id },
+      include: {
+        promoCodes: {
+          include: {
+            shops: { select: { id: true, name: true, createdAt: true, renewalCount: true, isRecycled: true } },
+            payments: { where: { status: 'APPROVED' } },
+            clicks: { 
+              take: 50,
+              orderBy: { createdAt: 'desc' }
+            },
+          },
+        },
+        payouts: { orderBy: { createdAt: 'desc' } },
+      },
+    });
+
+    if (!affiliate || affiliate.role !== 'AFFILIATE') {
+      throw new BadRequestException('Invalid affiliate user');
+    }
+
+    let lifetimeEarnings = 0;
+    let totalReferrals = 0;
+    let totalClicks = 0;
+    const referrals = [];
+    const allRecentClicks = [];
+
+    for (const promo of affiliate.promoCodes) {
+      totalReferrals += promo.shops.length;
+      
+      const realClickCount = await this.db.promoClick.count({ where: { promoCodeId: promo.id } });
+      totalClicks += realClickCount;
+
+      for (const shop of promo.shops) {
+        const shopPayments = promo.payments.filter((p) => p.shopId === shop.id);
+        const earnedFromShop = shopPayments.reduce((acc, p) => acc + Number(p.affiliateCommission), 0);
+        referrals.push({
+          shopId: shop.id,
+          shopName: shop.name,
+          renewalCount: shop.renewalCount,
+          earned: earnedFromShop,
+          joinedAt: shop.createdAt,
+          isRecycled: shop.isRecycled,
+          promoCode: promo.code
+        });
+      }
+
+      for (const pay of promo.payments) {
+        lifetimeEarnings += Number(pay.affiliateCommission);
+      }
+
+      allRecentClicks.push(...promo.clicks.map(c => ({
+        ...c,
+        promoCode: promo.code
+      })));
+    }
+
+    allRecentClicks.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+
+    const totalPaid = affiliate.payouts.filter(p => p.status === 'APPROVED').reduce((acc, p) => acc + Number(p.amount), 0);
+    const pendingPayouts = affiliate.payouts.filter(p => p.status === 'PENDING').reduce((acc, p) => acc + Number(p.amount), 0);
+    const availableBalance = lifetimeEarnings - totalPaid - pendingPayouts;
+
+    const conversionRate = totalClicks > 0 ? (totalReferrals / totalClicks) * 100 : 0;
+
+    const ipCounts: Record<string, { count: number; codes: Set<string> }> = {};
+    allRecentClicks.forEach(c => {
+      if (c.ip) {
+        const entry = ipCounts[c.ip] || { count: 0, codes: new Set() };
+        entry.count += 1;
+        entry.codes.add(c.promoCode);
+        ipCounts[c.ip] = entry;
+      }
+    });
+
+    return {
+      profile: {
+        id: affiliate.id,
+        name: affiliate.name,
+        email: affiliate.email,
+        createdAt: affiliate.createdAt,
+        isActive: affiliate.isActive,
+        payoutDetails: affiliate.payoutDetails,
+        role: affiliate.role
+      },
+      stats: {
+        lifetimeEarnings,
+        availableBalance,
+        totalPaid,
+        pendingPayouts,
+        totalReferrals,
+        totalClicks,
+        conversionRate: Number(conversionRate.toFixed(2)),
+      },
+      promoCodes: affiliate.promoCodes.map(pc => ({
+        id: pc.id,
+        code: pc.code,
+        discountPercent: pc.discountPercent,
+        isActive: pc.isActive,
+        createdAt: pc.createdAt
+      })),
+      referrals,
+      payouts: affiliate.payouts,
+      fraudMonitoring: {
+        suspiciousIPs: Object.entries(ipCounts)
+          .filter(([_, data]) => data.count > 3)
+          .map(([ip, data]) => ({
+            ip,
+            count: data.count,
+            codes: Array.from(data.codes)
+          }))
+          .sort((a, b) => b.count - a.count),
+        recentClicks: allRecentClicks.slice(0, 50)
+      }
+    };
+  }
+
+  async updateAffiliateStatus(id: string, isActive: boolean) {
+    const affiliate = await this.db.user.findUnique({ where: { id } });
+    if (!affiliate || affiliate.role !== 'AFFILIATE') {
+      throw new BadRequestException('Affiliate not found');
+    }
+
+    return this.db.user.update({
+      where: { id },
+      data: { isActive }
+    });
+  }
+
+  async revokePromoCode(id: string, codeId: string) {
+    const promo = await this.db.promoCode.findFirst({
+      where: { id: codeId, affiliateId: id }
+    });
+
+    if (!promo) {
+      throw new BadRequestException('Promo code not found for this affiliate');
+    }
+
+    return this.db.promoCode.update({
+      where: { id: codeId },
+      data: { isActive: false }
     });
   }
 }
