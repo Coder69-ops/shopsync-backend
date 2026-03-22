@@ -109,10 +109,10 @@ export class AffiliateController {
 
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.AFFILIATE)
-  @Patch('profile/payout-details')
-  async updatePayoutDetails(@CurrentUser() user: User, @Body() body: any) {
-      return this.affiliateService.updatePayoutDetails(user.id, body);
-  }
+    @Patch('profile/payout-details')
+    async updatePayoutDetails(@CurrentUser() user: User, @Body() body: { payoutDetails: any }) {
+        return this.affiliateService.updatePayoutDetails(user.id, body.payoutDetails);
+    }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.AFFILIATE)

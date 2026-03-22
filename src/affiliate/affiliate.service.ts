@@ -136,6 +136,12 @@ export class AffiliateService {
       payouts: affiliate.payouts,
       referrals,
       isSecure,
+      promoCodes: affiliate.promoCodes.map(pc => ({
+        id: pc.id,
+        code: pc.code,
+        discountPercent: pc.discountPercent,
+        isActive: pc.isActive,
+      })),
     };
   }
 
