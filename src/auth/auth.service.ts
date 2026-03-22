@@ -131,7 +131,7 @@ export class AuthService {
                     email: email, // use user email as shop email default
                     plan: 'FREE',
                     isActive: true,
-                    brandColor: '#F59E0B', // Default amber/gold
+                    brandColor: '#6366f1', // Default branding (Indigo 500)
                 },
             });
 
@@ -462,8 +462,7 @@ export class AuthService {
                             name: name.includes('User') ? `${name}` : `${name}'s Shop`,
                             email: finalEmail,
                             plan: 'FREE',
-                            isActive: true,
-                            brandColor: '#F59E0B',
+                            brandColor: '#6366f1',
                         },
                     });
 
@@ -578,7 +577,7 @@ export class AuthService {
                             email: finalEmail,
                             plan: 'FREE',
                             isActive: true,
-                            brandColor: '#F59E0B',
+                            brandColor: '#6366f1',
                         },
                     });
 
