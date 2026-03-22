@@ -25,7 +25,7 @@ export class FacebookController {
     private readonly facebookService: FacebookService,
     private readonly db: DatabaseService,
     private readonly configService: ConfigService,
-  ) { }
+  ) {}
 
   @UseGuards(JwtAuthGuard)
   @Get('pages')
@@ -73,24 +73,29 @@ export class FacebookController {
         'https://api.shopsync.it.com';
       const redirectUri = `${backendUrl}/facebook/callback?type=${type}`;
 
-      const accessToken =
-        await this.facebookService.exchangeCodeForAccessToken(
-          code,
-          redirectUri,
-        );
+      const accessToken = await this.facebookService.exchangeCodeForAccessToken(
+        code,
+        redirectUri,
+      );
 
       const frontendUrl =
         this.configService.get<string>('FRONTEND_URL') ||
         'https://shopsync.it.com';
-      const targetPath = type === 'onboarding' ? '/onboarding' : '/integrations';
+      const targetPath =
+        type === 'onboarding' ? '/onboarding' : '/integrations';
 
-      return res.redirect(`${frontendUrl}${targetPath}?fb_token=${accessToken}`);
+      return res.redirect(
+        `${frontendUrl}${targetPath}?fb_token=${accessToken}`,
+      );
     } catch (error) {
       const frontendUrl =
         this.configService.get<string>('FRONTEND_URL') ||
         'https://shopsync.it.com';
-      const targetPath = type === 'onboarding' ? '/onboarding' : '/integrations';
-      return res.redirect(`${frontendUrl}${targetPath}?error=facebook_connect_failed`);
+      const targetPath =
+        type === 'onboarding' ? '/onboarding' : '/integrations';
+      return res.redirect(
+        `${frontendUrl}${targetPath}?error=facebook_connect_failed`,
+      );
     }
   }
 
@@ -141,7 +146,8 @@ export class FacebookController {
       throw new HttpException('User or Shop not found', HttpStatus.NOT_FOUND);
     }
 
-    const currentPlatformIds = ((user.shop?.platformIds as any) || {}) as Record<string, any>;
+    const currentPlatformIds = ((user.shop?.platformIds as any) ||
+      {}) as Record<string, any>;
     const currentPageId = currentPlatformIds.facebook;
 
     if (currentPageId && currentPageId !== trimmedPageId) {
@@ -164,7 +170,10 @@ export class FacebookController {
 
     if (existingShopWithPage) {
       // If the older shop is still active and NOT scheduled for deletion, block to prevent multi-shop overlap
-      if (!existingShopWithPage.isDeletionScheduled && existingShopWithPage.isActive) {
+      if (
+        !existingShopWithPage.isDeletionScheduled &&
+        existingShopWithPage.isActive
+      ) {
         throw new HttpException(
           'This Facebook page is already connected to another active ShopSync account.',
           HttpStatus.CONFLICT,
@@ -192,6 +201,12 @@ export class FacebookController {
         accessToken: body.pageAccessToken,
       },
     });
+
+    // Subscribe to Facebook page webhooks
+    await this.facebookService.subscribePageToWebhook(
+      trimmedPageId,
+      body.pageAccessToken,
+    );
 
     await this.db.user.update({
       where: { id: userId },

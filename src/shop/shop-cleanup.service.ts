@@ -10,7 +10,7 @@ export class ShopCleanupService {
   constructor(
     private db: DatabaseService,
     private shopService: ShopService,
-  ) { }
+  ) {}
 
   @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
   async handleCleanup() {
@@ -36,15 +36,21 @@ export class ShopCleanupService {
         return;
       }
 
-      this.logger.log(`Found ${shopsToDelete.length} shops for permanent deletion.`);
+      this.logger.log(
+        `Found ${shopsToDelete.length} shops for permanent deletion.`,
+      );
 
       for (const shop of shopsToDelete) {
         try {
-          this.logger.log(`Permanently deleting shop: ${shop.name} (${shop.id})`);
+          this.logger.log(
+            `Permanently deleting shop: ${shop.name} (${shop.id})`,
+          );
           await this.shopService.permanentlyDelete(shop.id);
           this.logger.log(`Successfully deleted shop: ${shop.id}`);
         } catch (error) {
-          this.logger.error(`Failed to permanently delete shop ${shop.id}: ${error.message}`);
+          this.logger.error(
+            `Failed to permanently delete shop ${shop.id}: ${error.message}`,
+          );
         }
       }
 

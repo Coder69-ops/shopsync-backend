@@ -19,7 +19,12 @@ export interface ShopWithPrompt {
 }
 
 export interface AiResponse {
-  intent: 'CREATE_ORDER' | 'GENERAL_QUERY' | 'CHECK_STATUS' | 'CHECK_SHIPPING' | 'RETURN_ORDER';
+  intent:
+    | 'CREATE_ORDER'
+    | 'GENERAL_QUERY'
+    | 'CHECK_STATUS'
+    | 'CHECK_SHIPPING'
+    | 'RETURN_ORDER';
   thought?: string;
   reply_message: string;
   data: {
@@ -65,8 +70,8 @@ export class AiService {
     private readonly db: DatabaseService,
     private readonly systemConfigService: SystemConfigService,
     private readonly embeddingsService: EmbeddingsService,
-    private readonly redxService: RedxService
-  ) { }
+    private readonly redxService: RedxService,
+  ) {}
 
   private async sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
@@ -97,7 +102,11 @@ export class AiService {
 
   public async callAi(
     systemPrompt: string,
-    history: { role: 'user' | 'assistant'; content: string; shipping_details?: any }[],
+    history: {
+      role: 'user' | 'assistant';
+      content: string;
+      shipping_details?: any;
+    }[],
     userMessage: string,
     model?: string,
     jsonMode: boolean = true,
@@ -297,32 +306,49 @@ export class AiService {
   public async buildSystemPrompt(
     shop: ShopWithPrompt,
     mode: 'chat' | 'comment' = 'chat',
-    query?: string
+    query?: string,
   ): Promise<string> {
     let products: any[] = [];
 
     if (query) {
-      const queryEmbedding = await this.embeddingsService.generateEmbedding(query);
+      const queryEmbedding =
+        await this.embeddingsService.generateEmbedding(query);
       if (queryEmbedding.length > 0) {
         const vectorString = `[${queryEmbedding.join(',')}]`;
         try {
           // Perform Cosine Distance (<=>) vector search
-          products = await this.db.$queryRawUnsafe(`
+          products = await this.db.$queryRawUnsafe(
+            `
             SELECT id, name, price, stock, description, type, platform, "externalUrl", "imageUrl" 
             FROM "Product" 
             WHERE "shopId" = $1
             ORDER BY "embedding" <=> $2::vector
             LIMIT 10;
-          `, shop.id, vectorString);
+          `,
+            shop.id,
+            vectorString,
+          );
         } catch (err) {
           this.logger.error(`Vector search failed: ${err}`);
-          products = await this.db.product.findMany({ where: { shopId: shop.id }, take: 15, orderBy: { updatedAt: 'desc' } });
+          products = await this.db.product.findMany({
+            where: { shopId: shop.id },
+            take: 15,
+            orderBy: { updatedAt: 'desc' },
+          });
         }
       } else {
-        products = await this.db.product.findMany({ where: { shopId: shop.id }, take: 15, orderBy: { updatedAt: 'desc' } });
+        products = await this.db.product.findMany({
+          where: { shopId: shop.id },
+          take: 15,
+          orderBy: { updatedAt: 'desc' },
+        });
       }
     } else {
-      products = await this.db.product.findMany({ where: { shopId: shop.id }, take: 15, orderBy: { updatedAt: 'desc' } });
+      products = await this.db.product.findMany({
+        where: { shopId: shop.id },
+        take: 15,
+        orderBy: { updatedAt: 'desc' },
+      });
     }
 
     // Inventory Context with strict formatting
@@ -330,15 +356,15 @@ export class AiService {
     const inventoryList =
       products.length > 0
         ? products
-          .map((p: any) => {
-            const typeTag = p.type === 'SERVICE' ? '[SERVICE]' : '[PRODUCT]';
-            const details =
-              p.type === 'SERVICE'
-                ? `Fee: ${p.price} BDT | Description: ${p.description}`
-                : `Price: ${p.price} BDT | Stock: ${p.stock}`;
-            return `- ${typeTag} "${p.name}" | ${details} | ID: ${p.id}`;
-          })
-          .join('\n')
+            .map((p: any) => {
+              const typeTag = p.type === 'SERVICE' ? '[SERVICE]' : '[PRODUCT]';
+              const details =
+                p.type === 'SERVICE'
+                  ? `Fee: ${p.price} BDT | Description: ${p.description}`
+                  : `Price: ${p.price} BDT | Stock: ${p.stock}`;
+              return `- ${typeTag} "${p.name}" | ${details} | ID: ${p.id}`;
+            })
+            .join('\n')
         : 'NO PRODUCTS AVAILABLE. APOLOGIZE TO USER.';
 
     const aiConfig = shop.aiConfig || {};
@@ -522,9 +548,7 @@ export class AiService {
             where: { id: shop.id },
             data: { plan: 'FREE' },
           })
-          .catch((e) =>
-            this.logger.error('Failed to auto-downgrade shop', e),
-          );
+          .catch((e) => this.logger.error('Failed to auto-downgrade shop', e));
       }
       return true;
     }
@@ -547,7 +571,11 @@ export class AiService {
       }
 
       this.logger.log(`Processing comment for shop ${shop.id}: ${commentText}`);
-      const systemPrompt = await this.buildSystemPrompt(shop, 'comment', commentText);
+      const systemPrompt = await this.buildSystemPrompt(
+        shop,
+        'comment',
+        commentText,
+      );
 
       // Use dynamic AI call
       return await this.callAi(
@@ -621,7 +649,11 @@ export class AiService {
       }
 
       // 2. Generate AI Response via dynamic call
-      const systemPrompt = await this.buildSystemPrompt(shop, 'chat', userMessage);
+      const systemPrompt = await this.buildSystemPrompt(
+        shop,
+        'chat',
+        userMessage,
+      );
 
       let aiResponse = await this.callAi(
         systemPrompt,
@@ -633,24 +665,43 @@ export class AiService {
 
       // Handle Logistics Tool-use (Intent Loop)
       if (aiResponse.intent === 'CHECK_SHIPPING' && shop.redxToken) {
-        aiResponse = await this.processLogisticsIntent(aiResponse, shop, userMessage, history);
+        aiResponse = await this.processLogisticsIntent(
+          aiResponse,
+          shop,
+          userMessage,
+          history,
+        );
       }
 
       // PERSISTENCE FIX: If we are now creating an order, check if we had shipping details in history
       if (aiResponse.intent === 'CREATE_ORDER') {
-        const lastLogisticsMsg: any = [...history].reverse().find((m: any) => (m as any).shipping_details);
+        const lastLogisticsMsg: any = [...history]
+          .reverse()
+          .find((m: any) => m.shipping_details);
         if (lastLogisticsMsg?.shipping_details) {
           aiResponse.shipping_details = lastLogisticsMsg.shipping_details;
-          this.logger.log(`Restored shipping details from history for order creation: ${JSON.stringify(aiResponse.shipping_details)}`);
+          this.logger.log(
+            `Restored shipping details from history for order creation: ${JSON.stringify(aiResponse.shipping_details)}`,
+          );
         }
       }
 
       if (aiResponse.intent === 'CHECK_STATUS') {
-        return await this.processTrackingIntent(aiResponse, shop, userMessage, history);
+        return await this.processTrackingIntent(
+          aiResponse,
+          shop,
+          userMessage,
+          history,
+        );
       }
 
       if (aiResponse.intent === 'RETURN_ORDER') {
-        return await this.processReturnIntent(aiResponse, shop, userMessage, history);
+        return await this.processReturnIntent(
+          aiResponse,
+          shop,
+          userMessage,
+          history,
+        );
       }
 
       return aiResponse;
@@ -688,7 +739,11 @@ export class AiService {
       if (areas && areas.length > 0) {
         const bestArea = areas[0];
         const weight = Number(aiResponse.data?.parcel_weight) || 500;
-        const chargeData = await this.redxService.calculateCharge(bestArea.id, weight, redxToken);
+        const chargeData = await this.redxService.calculateCharge(
+          bestArea.id,
+          weight,
+          redxToken,
+        );
 
         // Final Price / Charge
         const charge = chargeData?.delivery_charge || 60; // Fallback to 60 BDT if missing
@@ -703,7 +758,11 @@ export class AiService {
           Now respond to the user politely using this data. If they seem to be placing an order, encourage them to confirm.
         `;
 
-        const basePrompt = await this.buildSystemPrompt(shop, 'chat', userMessage);
+        const basePrompt = await this.buildSystemPrompt(
+          shop,
+          'chat',
+          userMessage,
+        );
         const enrichedPrompt = `${basePrompt}\n\n${logisticsContext}`;
 
         const finalResponse = await this.callAi(
@@ -724,7 +783,8 @@ export class AiService {
 
         return finalResponse;
       } else {
-        aiResponse.reply_message += " (Note: We couldn't find a exact delivery area match in our courier service for your location. Please provide a major area name.)";
+        aiResponse.reply_message +=
+          " (Note: We couldn't find a exact delivery area match in our courier service for your location. Please provide a major area name.)";
       }
     } catch (err) {
       this.logger.error(`Logistics processing failed: ${err.message}`);
@@ -741,7 +801,8 @@ export class AiService {
   ): Promise<any> {
     const orderId = aiResponse.data?.order_id;
     if (!orderId) {
-      aiResponse.reply_message = "I'd be happy to help you track your order! Could you please provide your Order ID or Invoice Number?";
+      aiResponse.reply_message =
+        "I'd be happy to help you track your order! Could you please provide your Order ID or Invoice Number?";
       return aiResponse;
     }
 
@@ -754,10 +815,10 @@ export class AiService {
           OR: [
             { id: { startsWith: orderId, mode: 'insensitive' } },
             { invoiceNumber: { contains: orderId, mode: 'insensitive' } },
-            { trackingId: { contains: orderId, mode: 'insensitive' } }
-          ]
+            { trackingId: { contains: orderId, mode: 'insensitive' } },
+          ],
         },
-        include: { shop: true }
+        include: { shop: true },
       });
 
       if (!order) {
@@ -769,8 +830,13 @@ export class AiService {
 
       if (order.trackingId && order.shop?.redxToken) {
         try {
-          this.logger.log(`Fetching real-time RedX tracking for: ${order.trackingId}`);
-          const trackData = await this.redxService.trackParcel(order.trackingId, order.shop.redxToken);
+          this.logger.log(
+            `Fetching real-time RedX tracking for: ${order.trackingId}`,
+          );
+          const trackData = await this.redxService.trackParcel(
+            order.trackingId,
+            order.shop.redxToken,
+          );
           trackingContext += `- Courier: RedX\n- Tracking ID: ${order.trackingId}\n- Courier Status: ${trackData?.parcel?.status || 'Unknown'}\n- Courier Message: ${trackData?.parcel?.message_en || 'Processing'}`;
         } catch (err) {
           this.logger.warn(`RedX tracking failed: ${err.message}`);
@@ -778,7 +844,11 @@ export class AiService {
         }
       }
 
-      const basePrompt = await this.buildSystemPrompt(shop, 'chat', userMessage);
+      const basePrompt = await this.buildSystemPrompt(
+        shop,
+        'chat',
+        userMessage,
+      );
       const enrichedPrompt = `${basePrompt}\n\n${trackingContext}\n\nNow respond to the user with their order status in a friendly way. Mention the tracking ID and last courier update if available.`;
 
       return await this.callAi(
@@ -786,7 +856,7 @@ export class AiService {
         history,
         userMessage,
         undefined,
-        true
+        true,
       );
     } catch (err) {
       this.logger.error(`Tracking processing failed: ${err.message}`);
@@ -804,7 +874,8 @@ export class AiService {
     const reason = aiResponse.data?.return_reason;
 
     if (!orderId) {
-      aiResponse.reply_message = "I am sorry to hear you want to return an item. To help you with that, could you please provide your Order ID or Invoice Number?";
+      aiResponse.reply_message =
+        'I am sorry to hear you want to return an item. To help you with that, could you please provide your Order ID or Invoice Number?';
       return aiResponse;
     }
 
@@ -817,10 +888,10 @@ export class AiService {
           OR: [
             { id: { startsWith: orderId, mode: 'insensitive' } },
             { invoiceNumber: { contains: orderId, mode: 'insensitive' } },
-            { trackingId: { contains: orderId, mode: 'insensitive' } }
-          ]
+            { trackingId: { contains: orderId, mode: 'insensitive' } },
+          ],
         },
-        include: { shop: true }
+        include: { shop: true },
       });
 
       if (!order) {
@@ -840,11 +911,13 @@ export class AiService {
           where: { id: order.id },
           data: {
             shipmentStatus: 'RETURN_REQUESTED',
-          }
+          },
         });
 
         // Also log this in conversation if possible, or we just rely on order status.
-        this.logger.log(`Flagged order ${order.id} for Return Pickup. Reason: ${reason}`);
+        this.logger.log(
+          `Flagged order ${order.id} for Return Pickup. Reason: ${reason}`,
+        );
 
         returnContext += `- Action Taken: Return request logged successfully.\n- Instruction for AI: Tell the user that their return request has been submitted and a delivery agent will contact them within 2-3 days for pickup.`;
       } else if (order.status === 'PENDING' || order.status === 'CONFIRMED') {
@@ -852,14 +925,18 @@ export class AiService {
         canReturn = true;
         await this.db.order.update({
           where: { id: order.id },
-          data: { status: 'CANCELLED' }
+          data: { status: 'CANCELLED' },
         });
         returnContext += `- Action Taken: Order was not shipped yet, so it has been CANCELLED instead of returned.\n- Instruction for AI: Tell the user the order was cancelled successfully and no delivery will take place.`;
       } else {
         returnContext += `- Action Taken: Cannot return an order in ${order.status} status.\n- Instruction for AI: Politely explain that this order cannot be returned right now because of its current status.`;
       }
 
-      const basePrompt = await this.buildSystemPrompt(shop, 'chat', userMessage);
+      const basePrompt = await this.buildSystemPrompt(
+        shop,
+        'chat',
+        userMessage,
+      );
       const enrichedPrompt = `${basePrompt}\n\n${returnContext}\n\nNow respond to the user based on the action taken.`;
 
       return await this.callAi(
@@ -867,11 +944,12 @@ export class AiService {
         history,
         userMessage,
         undefined,
-        true
+        true,
       );
     } catch (err) {
       this.logger.error(`Return processing failed: ${err.message}`);
-      aiResponse.reply_message = "I couldn't process your return request right now due to a system issue. Please try again later or contact human support.";
+      aiResponse.reply_message =
+        "I couldn't process your return request right now due to a system issue. Please try again later or contact human support.";
       return aiResponse;
     }
   }

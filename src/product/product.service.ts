@@ -19,7 +19,7 @@ export class ProductService {
     private readonly databaseService: DatabaseService,
     private readonly emailService: EmailService,
     private readonly systemConfig: SystemConfigService,
-  ) { }
+  ) {}
 
   async create(createProductDto: CreateProductDto, shopId: string) {
     // 1. Check Shop Plan & Limits
@@ -189,10 +189,18 @@ export class ProductService {
     const config = (await this.systemConfig.getConfig()) as any;
     const threshold = config.lowStockThreshold || 5;
 
-    if (updateProductDto.stock !== undefined && product.stock <= threshold && product.shop?.email) {
-      this.emailService.sendLowStockAlert(product.shop.email, product.shop.name, product).catch(err =>
-        console.warn(`[PRODUCT] Failed to send low stock alert: ${err.message}`)
-      );
+    if (
+      updateProductDto.stock !== undefined &&
+      product.stock <= threshold &&
+      product.shop?.email
+    ) {
+      this.emailService
+        .sendLowStockAlert(product.shop.email, product.shop.name, product)
+        .catch((err) =>
+          console.warn(
+            `[PRODUCT] Failed to send low stock alert: ${err.message}`,
+          ),
+        );
     }
 
     return product;
@@ -253,7 +261,9 @@ export class ProductService {
             if (shop.plan === 'PRO') limit = Infinity;
 
             if (results.length > 500) {
-              return reject(new ForbiddenException('Maximum 500 items per import.'));
+              return reject(
+                new ForbiddenException('Maximum 500 items per import.'),
+              );
             }
 
             if (shop._count.products + results.length > limit) {
@@ -275,22 +285,31 @@ export class ProductService {
                 const price = parseFloat(row.price);
                 const stock = row.stock ? parseInt(row.stock) : 0;
 
-                if (isNaN(price)) throw new Error(`Row ${index + 1}: Invalid price`);
+                if (isNaN(price))
+                  throw new Error(`Row ${index + 1}: Invalid price`);
 
                 // Map type
-                let productType: 'PHYSICAL' | 'SERVICE' | 'DIGITAL' = 'PHYSICAL';
-                if (row.type?.toUpperCase() === 'SERVICE') productType = 'SERVICE';
-                if (row.type?.toUpperCase() === 'DIGITAL') productType = 'DIGITAL';
+                let productType: 'PHYSICAL' | 'SERVICE' | 'DIGITAL' =
+                  'PHYSICAL';
+                if (row.type?.toUpperCase() === 'SERVICE')
+                  productType = 'SERVICE';
+                if (row.type?.toUpperCase() === 'DIGITAL')
+                  productType = 'DIGITAL';
 
-                const sku = row.sku || `SKU-${Date.now().toString().slice(-6)}-${index + 1}`;
+                const sku =
+                  row.sku ||
+                  `SKU-${Date.now().toString().slice(-6)}-${index + 1}`;
 
                 // Check SKU if provided in CSV
                 if (row.sku) {
-                  const existing = await this.databaseService.product.findUnique({
-                    where: { shopId_sku: { shopId, sku: row.sku } },
-                  });
+                  const existing =
+                    await this.databaseService.product.findUnique({
+                      where: { shopId_sku: { shopId, sku: row.sku } },
+                    });
                   if (existing) {
-                    throw new Error(`SKU ${row.sku} already exists for this shop`);
+                    throw new Error(
+                      `SKU ${row.sku} already exists for this shop`,
+                    );
                   }
                 }
 
@@ -298,10 +317,16 @@ export class ProductService {
                 let attributes = {};
                 try {
                   if (row.attributes) {
-                    attributes = typeof row.attributes === 'string' ? JSON.parse(row.attributes) : row.attributes;
+                    attributes =
+                      typeof row.attributes === 'string'
+                        ? JSON.parse(row.attributes)
+                        : row.attributes;
                   }
                 } catch (e) {
-                  console.warn(`Failed to parse attributes for row ${index + 1}`, e);
+                  console.warn(
+                    `Failed to parse attributes for row ${index + 1}`,
+                    e,
+                  );
                 }
 
                 const product = await this.databaseService.product.create({
@@ -322,7 +347,10 @@ export class ProductService {
                 });
                 createdProducts.push(product);
               } catch (error) {
-                console.error(`Import failed for row ${index + 1}:`, error.message);
+                console.error(
+                  `Import failed for row ${index + 1}:`,
+                  error.message,
+                );
                 errors.push({
                   row: index + 1,
                   name: row.name || 'Unknown',
@@ -365,11 +393,19 @@ export class ProductService {
     ];
 
     const sampleRow = [
-      isDigital ? 'UI Kit Pro' : isService ? 'Custom Logo Design' : 'Sample Product',
+      isDigital
+        ? 'UI Kit Pro'
+        : isService
+          ? 'Custom Logo Design'
+          : 'Sample Product',
       isDigital ? '49.00' : isService ? '199.00' : '19.99',
       isDigital || isService ? '9999' : '100',
       isDigital ? 'DIGITAL' : isService ? 'SERVICE' : 'PHYSICAL',
-      isDigital ? 'Premium UI kit for Figma' : isService ? 'Professional identity design' : 'A great sample product',
+      isDigital
+        ? 'Premium UI kit for Figma'
+        : isService
+          ? 'Professional identity design'
+          : 'A great sample product',
       isDigital ? 'DIG-001' : isService ? 'SRV-001' : 'SKU-123',
       isDigital ? 'Design' : isService ? 'Graphic Design' : 'Electronics',
       'https://example.com/image.jpg',

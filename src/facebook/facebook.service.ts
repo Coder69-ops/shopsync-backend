@@ -6,7 +6,7 @@ import axios from 'axios';
 export class FacebookService {
   private readonly logger = new Logger(FacebookService.name);
 
-  constructor(private configService: ConfigService) { }
+  constructor(private configService: ConfigService) {}
 
   async exchangeForLongLivedToken(shortLivedToken: string): Promise<string> {
     try {
@@ -33,7 +33,10 @@ export class FacebookService {
     }
   }
 
-  async exchangeCodeForAccessToken(code: string, redirectUri?: string): Promise<string> {
+  async exchangeCodeForAccessToken(
+    code: string,
+    redirectUri?: string,
+  ): Promise<string> {
     try {
       const appId = this.configService.get<string>('FACEBOOK_APP_ID');
       const appSecret = this.configService.get<string>('FACEBOOK_APP_SECRET');
@@ -63,10 +66,14 @@ export class FacebookService {
     }
   }
 
-  async getFacebookConnectUrl(type: 'onboarding' | 'integrations'): Promise<string> {
+  async getFacebookConnectUrl(
+    type: 'onboarding' | 'integrations',
+  ): Promise<string> {
     const appId = this.configService.get<string>('FACEBOOK_APP_ID');
     const configId = this.configService.get<string>('FACEBOOK_CONFIG_ID');
-    const backendUrl = this.configService.get<string>('BACKEND_URL') || 'https://api.shopsync.it.com';
+    const backendUrl =
+      this.configService.get<string>('BACKEND_URL') ||
+      'https://api.shopsync.it.com';
     const redirectUri = `${backendUrl}/facebook/callback?type=${type}`;
 
     return `https://www.facebook.com/v24.0/dialog/oauth?client_id=${appId}&redirect_uri=${encodeURIComponent(redirectUri)}&config_id=${configId}&response_type=code`;
@@ -78,7 +85,9 @@ export class FacebookService {
       const url = `https://graph.facebook.com/v24.0/me/accounts?access_token=${longLivedToken}&fields=name,id,access_token,picture`;
       const response = await axios.get(url);
 
-      this.logger.log(`Found ${response.data.data?.length || 0} pages in Facebook response.`);
+      this.logger.log(
+        `Found ${response.data.data?.length || 0} pages in Facebook response.`,
+      );
       if (response.data.data && response.data.data.length > 0) {
         this.logger.debug('First page found: ' + response.data.data[0].name);
       }
@@ -110,7 +119,9 @@ export class FacebookService {
       );
 
       if (process.env.LOAD_TEST_MODE === 'true') {
-        this.logger.log(`[LOAD TEST MODE] Bypassed Facebook send message to ${recipientId}`);
+        this.logger.log(
+          `[LOAD TEST MODE] Bypassed Facebook send message to ${recipientId}`,
+        );
         return;
       }
 
@@ -195,18 +206,58 @@ export class FacebookService {
     }
   }
 
-  async getUserProfile(psid: string, pageAccessToken: string): Promise<{ name: string; profilePic: string } | null> {
+  async getUserProfile(
+    psid: string,
+    pageAccessToken: string,
+  ): Promise<{ name: string; profilePic: string } | null> {
     try {
       const url = `https://graph.facebook.com/v24.0/${psid}?fields=first_name,last_name,name,profile_pic&access_token=${pageAccessToken}`;
       const response = await axios.get(url);
 
       return {
-        name: response.data.name || `${response.data.first_name || ''} ${response.data.last_name || ''}`.trim() || 'Facebook User',
+        name:
+          response.data.name ||
+          `${response.data.first_name || ''} ${response.data.last_name || ''}`.trim() ||
+          'Facebook User',
         profilePic: response.data.profile_pic || '',
       };
-    } catch (error) {
-      this.logger.error(`Failed to fetch user profile for psid: ${psid}`, error.response?.data || error.message);
+    } catch (error: any) {
+      this.logger.error(
+        `Failed to fetch user profile for psid: ${psid}`,
+        error.response?.data || error.message,
+      );
       return null;
+    }
+  }
+
+  async subscribePageToWebhook(
+    pageId: string,
+    pageAccessToken: string,
+  ): Promise<boolean> {
+    try {
+      const url = `https://graph.facebook.com/v24.0/${pageId}/subscribed_apps`;
+
+      const response = await axios.post(url, null, {
+        params: {
+          // messages = inbox, feed = comments
+          subscribed_fields: 'messages,messaging_postbacks,feed',
+          access_token: pageAccessToken,
+        },
+      });
+
+      if (response.data.success) {
+        this.logger.log(
+          `✅ Successfully subscribed page ${pageId} to webhook!`,
+        );
+        return true;
+      }
+      return false;
+    } catch (error: any) {
+      this.logger.error(
+        `❌ Failed to subscribe page ${pageId}:`,
+        error.response?.data || error.message,
+      );
+      return false;
     }
   }
 }

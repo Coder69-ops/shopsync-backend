@@ -82,7 +82,9 @@ export class RedxService {
    * @param query  Optional search query (e.g. area name)
    */
   async getAreas(token: string, query?: string): Promise<RedxArea[]> {
-    this.logger.log(`Fetching RedX delivery areas${query ? ` for query: ${query}` : ''}`);
+    this.logger.log(
+      `Fetching RedX delivery areas${query ? ` for query: ${query}` : ''}`,
+    );
     const client = this.buildClient(token);
 
     try {
@@ -91,7 +93,7 @@ export class RedxService {
 
       if (query && areas.length > 0) {
         const lowerQuery = query.toLowerCase();
-        areas = areas.filter(a => a.name.toLowerCase().includes(lowerQuery));
+        areas = areas.filter((a) => a.name.toLowerCase().includes(lowerQuery));
       }
 
       this.logger.log(`Found ${areas.length} matching RedX areas`);
@@ -114,7 +116,9 @@ export class RedxService {
         this.logger.warn('REDX_BASE_URL not set – returning mock area list');
         if (query) {
           const lowerQuery = query.toLowerCase();
-          return allMockAreas.filter(a => a.name.toLowerCase().includes(lowerQuery));
+          return allMockAreas.filter((a) =>
+            a.name.toLowerCase().includes(lowerQuery),
+          );
         }
         return allMockAreas;
       }
@@ -162,9 +166,7 @@ export class RedxService {
         );
       }
 
-      this.logger.log(
-        `RedX parcel created. tracking_id=${data.tracking_id}`,
-      );
+      this.logger.log(`RedX parcel created. tracking_id=${data.tracking_id}`);
 
       return {
         trackingId: String(data.tracking_id),
@@ -208,7 +210,9 @@ export class RedxService {
       );
     }
     if (!payload.merchant_invoice_id?.trim()) {
-      throw new BadRequestException('merchant_invoice_id is required for RedX.');
+      throw new BadRequestException(
+        'merchant_invoice_id is required for RedX.',
+      );
     }
     if (payload.parcel_weight < 500) {
       throw new BadRequestException(
@@ -230,7 +234,9 @@ export class RedxService {
       return data;
     } catch (err: any) {
       this.logger.error(`RedX track failed: ${err?.message}`);
-      throw new InternalServerErrorException('Failed to fetch tracking details from RedX.');
+      throw new InternalServerErrorException(
+        'Failed to fetch tracking details from RedX.',
+      );
     }
   }
 
@@ -245,7 +251,9 @@ export class RedxService {
       return data;
     } catch (err: any) {
       this.logger.error(`RedX info failed: ${err?.message}`);
-      throw new InternalServerErrorException('Failed to fetch parcel info from RedX.');
+      throw new InternalServerErrorException(
+        'Failed to fetch parcel info from RedX.',
+      );
     }
   }
 
@@ -257,16 +265,24 @@ export class RedxService {
     const client = this.buildClient(token);
     try {
       // Use the v4 PDF service endpoint derived from the dashboard
-      const { data } = await client.get(`https://api.redx.com.bd/v4/logistics/pdf-service/parcel/${trackingId}`, {
-        baseURL: '' // override to absolute URL
-      });
+      const { data } = await client.get(
+        `https://api.redx.com.bd/v4/logistics/pdf-service/parcel/${trackingId}`,
+        {
+          baseURL: '', // override to absolute URL
+        },
+      );
       return { pdfJson: data };
     } catch (err: any) {
       this.logger.error(`RedX label fetch failed: ${err?.message}`);
 
       // Fallback for Sandbox / Error testing
-      if (this.baseUrl.includes('sandbox.redx.com.bd') || !this.configService.get('REDX_BASE_URL')) {
-        this.logger.warn(`Fallback triggered for RedX label fetch: returning mock URL for ${trackingId}`);
+      if (
+        this.baseUrl.includes('sandbox.redx.com.bd') ||
+        !this.configService.get('REDX_BASE_URL')
+      ) {
+        this.logger.warn(
+          `Fallback triggered for RedX label fetch: returning mock URL for ${trackingId}`,
+        );
         return {
           url: `https://redx.com.bd/parcel/track/${trackingId}`, // Fallback mock link
         };
@@ -291,7 +307,9 @@ export class RedxService {
       return data;
     } catch (err: any) {
       this.logger.error(`RedX bulk creation failed: ${err?.message}`);
-      throw new InternalServerErrorException('Failed to create bulk parcels in RedX.');
+      throw new InternalServerErrorException(
+        'Failed to create bulk parcels in RedX.',
+      );
     }
   }
   // ─── Public: Cost Calculation ─────────────────────────────────────────────
@@ -302,22 +320,26 @@ export class RedxService {
   async calculateCharge(
     delivery_area_id: number,
     parcel_weight: number,
-    token: string
+    token: string,
   ): Promise<any> {
-    this.logger.log(`Calculating RedX charge for area: ${delivery_area_id}, weight: ${parcel_weight}`);
+    this.logger.log(
+      `Calculating RedX charge for area: ${delivery_area_id}, weight: ${parcel_weight}`,
+    );
     const client = this.buildClient(token);
     try {
       // Typically takes delivery_area_id and parcel_weight
       const { data } = await client.get(`/charge/charge_calculator`, {
         params: {
           delivery_area_id,
-          parcel_weight
-        }
+          parcel_weight,
+        },
       });
       return data;
     } catch (err: any) {
       this.logger.error(`RedX charge calculation failed: ${err?.message}`);
-      throw new InternalServerErrorException('Failed to calculate delivery charge.');
+      throw new InternalServerErrorException(
+        'Failed to calculate delivery charge.',
+      );
     }
   }
 

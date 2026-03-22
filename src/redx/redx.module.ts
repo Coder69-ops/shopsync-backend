@@ -13,4 +13,4 @@ import { RedxController } from './redx.controller';
   providers: [RedxService],
   exports: [RedxService],
 })
-export class RedxModule { }
+export class RedxModule {}

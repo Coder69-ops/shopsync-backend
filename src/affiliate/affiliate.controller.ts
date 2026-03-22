@@ -1,4 +1,15 @@
-import { Controller, Post, Body, UseGuards, Get, Patch, Param, Delete, Req, Res } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Body,
+  UseGuards,
+  Get,
+  Patch,
+  Param,
+  Delete,
+  Req,
+  Res,
+} from '@nestjs/common';
 import { AffiliateService } from './affiliate.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
@@ -24,10 +35,10 @@ export class AffiliateController {
   ) {
     const ip = req.ip || req.connection.remoteAddress;
     const userAgent = req.headers['user-agent'];
-    
+
     await this.affiliateService.trackClick(code, ip, userAgent);
-    
-    // Redirect to landing page with the promo code in query if needed, 
+
+    // Redirect to landing page with the promo code in query if needed,
     // or just to the home page.
     return res.redirect(`/?ref=${code}`);
   }
@@ -36,17 +47,23 @@ export class AffiliateController {
   @Roles(UserRole.AFFILIATE)
   @Post('payout/request')
   async requestPayout(
-      @CurrentUser() user: User, 
-      @Body() body: { amount: number; paymentMethodId: string; payoutDetails: string }
+    @CurrentUser() user: User,
+    @Body()
+    body: { amount: number; paymentMethodId: string; payoutDetails: string },
   ) {
-    return this.affiliateService.requestPayout(user.id, body.amount, body.paymentMethodId, body.payoutDetails);
+    return this.affiliateService.requestPayout(
+      user.id,
+      body.amount,
+      body.paymentMethodId,
+      body.payoutDetails,
+    );
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.AFFILIATE)
   @Get('dashboard')
   async getDashboard(@CurrentUser() user: User) {
-      return this.affiliateService.getDashboardStats(user.id);
+    return this.affiliateService.getDashboardStats(user.id);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -61,9 +78,13 @@ export class AffiliateController {
   @Patch('admin/payouts/:id')
   async updatePayoutStatus(
     @Param('id') id: string,
-    @Body() body: { status: 'APPROVED' | 'REJECTED'; rejectionReason?: string }
+    @Body() body: { status: 'APPROVED' | 'REJECTED'; rejectionReason?: string },
   ) {
-    return this.affiliateService.updatePayoutStatus(id, body.status, body.rejectionReason);
+    return this.affiliateService.updatePayoutStatus(
+      id,
+      body.status,
+      body.rejectionReason,
+    );
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -93,9 +114,13 @@ export class AffiliateController {
   @Patch('admin/applications/:id')
   async updateApplicationStatus(
     @Param('id') id: string,
-    @Body() body: { status: any; rejectionReason?: string }
+    @Body() body: { status: any; rejectionReason?: string },
   ) {
-    return this.affiliateService.updateApplicationStatus(id, body.status, body.rejectionReason);
+    return this.affiliateService.updateApplicationStatus(
+      id,
+      body.status,
+      body.rejectionReason,
+    );
   }
 
   // Expansion Endpoints
@@ -104,42 +129,48 @@ export class AffiliateController {
   @Roles(UserRole.AFFILIATE)
   @Get('profile')
   async getProfile(@CurrentUser() user: User) {
-      return this.affiliateService.getAffiliateProfile(user.id);
+    return this.affiliateService.getAffiliateProfile(user.id);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.AFFILIATE)
-    @Patch('profile/payout-details')
-    async updatePayoutDetails(@CurrentUser() user: User, @Body() body: { payoutDetails: any }) {
-        return this.affiliateService.updatePayoutDetails(user.id, body.payoutDetails);
-    }
+  @Patch('profile/payout-details')
+  async updatePayoutDetails(
+    @CurrentUser() user: User,
+    @Body() body: { payoutDetails: any },
+  ) {
+    return this.affiliateService.updatePayoutDetails(
+      user.id,
+      body.payoutDetails,
+    );
+  }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.AFFILIATE)
   @Get('payout-methods')
   async getActivePayoutMethods() {
-      return this.affiliateService.getPayoutMethods(true);
+    return this.affiliateService.getPayoutMethods(true);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.SUPERADMIN)
   @Get('admin/payout-methods')
   async getAllPayoutMethods() {
-      return this.affiliateService.getPayoutMethods(false);
+    return this.affiliateService.getPayoutMethods(false);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.SUPERADMIN)
   @Post('admin/payout-methods')
   async createPayoutMethod(@Body() body: any) {
-      return this.affiliateService.createPayoutMethod(body);
+    return this.affiliateService.createPayoutMethod(body);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.SUPERADMIN)
   @Patch('admin/payout-methods/:id')
   async updatePayoutMethod(@Param('id') id: string, @Body() body: any) {
-      return this.affiliateService.updatePayoutMethod(id, body);
+    return this.affiliateService.updatePayoutMethod(id, body);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -154,7 +185,7 @@ export class AffiliateController {
   @Post('admin/affiliate/:id/status')
   async updateAffiliateStatus(
     @Param('id') id: string,
-    @Body() body: { isActive: boolean }
+    @Body() body: { isActive: boolean },
   ) {
     return this.affiliateService.updateAffiliateStatus(id, body.isActive);
   }
@@ -164,7 +195,7 @@ export class AffiliateController {
   @Delete('admin/affiliate/:id/promo/:codeId')
   async revokePromoCode(
     @Param('id') id: string,
-    @Param('codeId') codeId: string
+    @Param('codeId') codeId: string,
   ) {
     return this.affiliateService.revokePromoCode(id, codeId);
   }

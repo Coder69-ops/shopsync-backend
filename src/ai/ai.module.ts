@@ -23,4 +23,4 @@ import { RedxModule } from '../redx/redx.module';
   providers: [AiService, AiAnalyticsProcessor, AiAnalyticsSchedulerService],
   exports: [AiService, BullModule, AiAnalyticsSchedulerService],
 })
-export class AiModule { }
+export class AiModule {}

@@ -48,7 +48,8 @@ export class PushToRedxDto {
   deliveryAreaName?: string;
 
   @ApiPropertyOptional({
-    description: 'Cash-on-delivery amount in BDT (defaults to Order totalPrice)',
+    description:
+      'Cash-on-delivery amount in BDT (defaults to Order totalPrice)',
     example: 950,
   })
   @IsNumber()

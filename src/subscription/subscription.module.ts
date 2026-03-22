@@ -5,8 +5,8 @@ import { EmailModule } from '../email/email.module';
 import { SystemConfigModule } from '../superadmin/system-config.module';
 
 @Module({
-    imports: [DatabaseModule, EmailModule, SystemConfigModule],
-    providers: [SubscriptionService],
-    exports: [SubscriptionService],
+  imports: [DatabaseModule, EmailModule, SystemConfigModule],
+  providers: [SubscriptionService],
+  exports: [SubscriptionService],
 })
-export class SubscriptionModule { }
+export class SubscriptionModule {}

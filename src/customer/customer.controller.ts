@@ -17,13 +17,21 @@ import { UserRole } from '@prisma/client';
 @Controller('customer')
 @UseGuards(AuthGuard('jwt'), RolesGuard)
 export class CustomerController {
-  constructor(private readonly customerService: CustomerService) { }
+  constructor(private readonly customerService: CustomerService) {}
 
   @Get()
   @Roles(UserRole.ADMIN, UserRole.SUPERADMIN)
-  async findAll(@Req() req: any, @Query('page') page?: string, @Query('limit') limit?: string) {
+  async findAll(
+    @Req() req: any,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
     const shopId = req.user.shopId;
-    return this.customerService.findAll(shopId, Number(page) || 1, Number(limit) || 20);
+    return this.customerService.findAll(
+      shopId,
+      Number(page) || 1,
+      Number(limit) || 20,
+    );
   }
 
   @Get('stats')

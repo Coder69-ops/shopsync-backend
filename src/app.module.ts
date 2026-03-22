@@ -113,4 +113,4 @@ import { AffiliateModule } from './affiliate/affiliate.module';
     },
   ],
 })
-export class AppModule { }
+export class AppModule {}

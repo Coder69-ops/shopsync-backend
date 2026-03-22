@@ -2,7 +2,6 @@ import { Injectable, Logger } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service';
 import { SubscriptionPlan } from '@prisma/client';
 
-
 export interface UsagePeriod {
   start: Date;
   end: Date;
@@ -12,7 +11,7 @@ export interface UsagePeriod {
 export class UsageService {
   private readonly logger = new Logger(UsageService.name);
 
-  constructor(private db: DatabaseService) { }
+  constructor(private db: DatabaseService) {}
 
   /**
    * Calculates the current usage period (cycle) for a shop.
@@ -28,14 +27,17 @@ export class UsageService {
       const end = new Date(shop.trialEndsAt);
       const start = new Date(end);
       start.setDate(start.getDate() - 14); // Standard 14 day trial
-      return { 
-        start: start > now ? now : start, 
-        end 
+      return {
+        start: start > now ? now : start,
+        end,
       };
     }
 
     // 2. For PRO / BASIC: Use subscription cycle
-    if ((shop.plan === 'PRO' || shop.plan === 'BASIC') && shop.subscriptionEndsAt) {
+    if (
+      (shop.plan === 'PRO' || shop.plan === 'BASIC') &&
+      shop.subscriptionEndsAt
+    ) {
       const subEnd = new Date(shop.subscriptionEndsAt);
       const billingDay = subEnd.getDate();
 
@@ -45,21 +47,37 @@ export class UsageService {
         start.setMonth(start.getMonth() - 1);
       }
 
-      // Handle edge case: if billing day is 31st and current month has 30 days, 
+      // Handle edge case: if billing day is 31st and current month has 30 days,
       // JavaScript Date handles this by overflowing, but we want it to pin to last day.
       if (start.getDate() !== billingDay && billingDay > 28) {
         start = new Date(now.getFullYear(), now.getMonth(), 0); // Last day of previous month
       }
 
-      let end = new Date(start);
+      const end = new Date(start);
       end.setMonth(end.getMonth() + 1);
 
       return { start, end };
     }
 
     // 3. Fallback: Standard Calendar Month
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
-    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1, 0, 0, 0, 0);
+    const startOfMonth = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      1,
+      0,
+      0,
+      0,
+      0,
+    );
+    const endOfMonth = new Date(
+      now.getFullYear(),
+      now.getMonth() + 1,
+      1,
+      0,
+      0,
+      0,
+      0,
+    );
     return { start: startOfMonth, end: endOfMonth };
   }
 
@@ -69,9 +87,11 @@ export class UsageService {
   }
 
   async canSendMessage(shopId: string, shopData?: any): Promise<boolean> {
-    const shop = shopData || await this.db.shop.findUnique({
-      where: { id: shopId },
-    });
+    const shop =
+      shopData ||
+      (await this.db.shop.findUnique({
+        where: { id: shopId },
+      }));
 
     if (!shop) return false;
 
@@ -81,7 +101,9 @@ export class UsageService {
 
     // PRO_TRIAL has unlimited messages; treat missing config as unlimited for trial/pro
     if (!planConfig) {
-      this.logger.warn(`No planConfig found for plan=${shop.plan} (shop=${shopId}). Go to SuperAdmin > Plans to initialize it.`);
+      this.logger.warn(
+        `No planConfig found for plan=${shop.plan} (shop=${shopId}). Go to SuperAdmin > Plans to initialize it.`,
+      );
       if (shop.plan === 'PRO_TRIAL' || shop.plan === 'PRO') return true;
       return false;
     }
@@ -119,9 +141,11 @@ export class UsageService {
   }
 
   async canCreateOrder(shopId: string, shopData?: any): Promise<boolean> {
-    const shop = shopData || await this.db.shop.findUnique({
-      where: { id: shopId },
-    });
+    const shop =
+      shopData ||
+      (await this.db.shop.findUnique({
+        where: { id: shopId },
+      }));
 
     if (!shop) return false;
 
@@ -131,7 +155,9 @@ export class UsageService {
 
     // PRO_TRIAL has unlimited orders; treat missing config as unlimited for trial/pro
     if (!planConfig) {
-      this.logger.warn(`No planConfig found for plan=${shop.plan} (shop=${shopId}). Go to SuperAdmin > Plans to initialize it.`);
+      this.logger.warn(
+        `No planConfig found for plan=${shop.plan} (shop=${shopId}). Go to SuperAdmin > Plans to initialize it.`,
+      );
       if (shop.plan === 'PRO_TRIAL' || shop.plan === 'PRO') return true;
       return false;
     }
@@ -157,8 +183,13 @@ export class UsageService {
     return usage < activeLimit;
   }
 
-  async hasFeatureAccess(shopId: string, featureKey: string, shopData?: any): Promise<boolean> {
-    const shop = shopData || await this.db.shop.findUnique({ where: { id: shopId } });
+  async hasFeatureAccess(
+    shopId: string,
+    featureKey: string,
+    shopData?: any,
+  ): Promise<boolean> {
+    const shop =
+      shopData || (await this.db.shop.findUnique({ where: { id: shopId } }));
     if (!shop) return false;
 
     // Check for custom feature overrides

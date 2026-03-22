@@ -21,7 +21,7 @@ import { Response } from 'express';
 
 @Controller('product')
 export class ProductController {
-  constructor(private readonly productService: ProductService) { }
+  constructor(private readonly productService: ProductService) {}
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard)
@@ -48,7 +48,9 @@ export class ProductController {
   getSampleCsv(@Query('type') type: string, @Res() res: Response) {
     const csv = this.productService.getSampleCsv(type);
     res.header('Content-Type', 'text/csv');
-    const filename = type ? `${type.toLowerCase()}_sample.csv` : 'products_sample.csv';
+    const filename = type
+      ? `${type.toLowerCase()}_sample.csv`
+      : 'products_sample.csv';
     res.attachment(filename);
     return res.send(csv);
   }
@@ -68,7 +70,11 @@ export class ProductController {
     @Query('page') page?: string,
     @Query('limit') limit?: string,
   ) {
-    return this.productService.findAll(shopId, Number(page) || 1, Number(limit) || 20);
+    return this.productService.findAll(
+      shopId,
+      Number(page) || 1,
+      Number(limit) || 20,
+    );
   }
 
   @ApiBearerAuth()

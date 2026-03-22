@@ -6,12 +6,12 @@ import { DatabaseModule } from '../database/database.module';
 import { OrderModule } from '../order/order.module';
 
 @Module({
-    imports: [
-        DatabaseModule,
-        forwardRef(() => OrderModule), // Needed for the Webhook Controller to update orders
-    ],
-    providers: [WooCommerceService],
-    controllers: [WooCommerceWebhookController, WooCommerceController],
-    exports: [WooCommerceService],
+  imports: [
+    DatabaseModule,
+    forwardRef(() => OrderModule), // Needed for the Webhook Controller to update orders
+  ],
+  providers: [WooCommerceService],
+  controllers: [WooCommerceWebhookController, WooCommerceController],
+  exports: [WooCommerceService],
 })
-export class WooCommerceModule { }
+export class WooCommerceModule {}

@@ -24,4 +24,4 @@ import { AiModule } from '../ai/ai.module';
   providers: [SuperAdminService, HealthService],
   exports: [SuperAdminService, SystemConfigModule],
 })
-export class SuperAdminModule { }
+export class SuperAdminModule {}

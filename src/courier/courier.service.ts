@@ -9,7 +9,7 @@ import { ConfigService } from '@nestjs/config';
 /** Normalised result returned by every courier provider */
 export interface CourierShipmentResult {
   consignmentId: string;
-  trackingId: string;    // same value – kept for legacy callers
+  trackingId: string; // same value – kept for legacy callers
   courier: string;
   status: string;
 }
@@ -138,8 +138,9 @@ export class CourierService {
 
       // Steadfast returns: { status: 200, consignment: { consignment_id, tracking_code, ... } }
       const consignment = data?.consignment || data;
-      const consignmentId =
-        String(consignment.consignment_id || consignment.tracking_code || '');
+      const consignmentId = String(
+        consignment.consignment_id || consignment.tracking_code || '',
+      );
 
       if (!consignmentId) {
         throw new InternalServerErrorException(
@@ -167,7 +168,12 @@ export class CourierService {
         `Steadfast request failed (${err.message}). Using mock response for development.`,
       );
       const mockId = `SFS-${Math.floor(Math.random() * 900000 + 100000)}`;
-      return { consignmentId: mockId, trackingId: mockId, courier: 'Steadfast', status: 'PENDING_PICKUP' };
+      return {
+        consignmentId: mockId,
+        trackingId: mockId,
+        courier: 'Steadfast',
+        status: 'PENDING_PICKUP',
+      };
     }
   }
 
@@ -199,4 +205,3 @@ export class CourierService {
     };
   }
 }
-

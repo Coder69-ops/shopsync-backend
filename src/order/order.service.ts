@@ -31,10 +31,12 @@ export class OrderService {
     private readonly usageService: UsageService,
     private readonly redxService: RedxService,
     private readonly emailService: EmailService,
-    @Inject(forwardRef(() => WooCommerceService)) private readonly wooCommerceService: WooCommerceService,
-    @Inject(forwardRef(() => ShopifyService)) private readonly shopifyService: ShopifyService,
+    @Inject(forwardRef(() => WooCommerceService))
+    private readonly wooCommerceService: WooCommerceService,
+    @Inject(forwardRef(() => ShopifyService))
+    private readonly shopifyService: ShopifyService,
     @Inject(forwardRef(() => AiService)) private readonly aiService: AiService,
-  ) { }
+  ) {}
 
   async create(data: any, shopId: string) {
     // Map the incoming DTO/Interface to the CreateOrder logic
@@ -49,7 +51,9 @@ export class OrderService {
         psid: data.psid,
         customerId: data.customerId,
         rawExtract: data,
-        source: ['MANUAL', 'AI', 'WEB'].includes(data.source) ? data.source : 'MANUAL',
+        source: ['MANUAL', 'AI', 'WEB'].includes(data.source)
+          ? data.source
+          : 'MANUAL',
       },
       shopId,
     );
@@ -74,7 +78,9 @@ export class OrderService {
     // Determine base delivery charge
     const defaultDeliveryCharge = isFreeDelivery
       ? 0
-      : (data.delivery_type === 'outside' ? deliveryOutside : deliveryInside);
+      : data.delivery_type === 'outside'
+        ? deliveryOutside
+        : deliveryInside;
 
     // ATOMICITY FIX: Wrap everything in a transaction
     const createdOrder = await this.db.$transaction(async (tx: any) => {
@@ -91,16 +97,18 @@ export class OrderService {
             where: item.productId
               ? { id: item.productId }
               : {
-                shopId,
-                name: {
-                  contains: item.product_name || item.name,
-                  mode: 'insensitive',
+                  shopId,
+                  name: {
+                    contains: item.product_name || item.name,
+                    mode: 'insensitive',
+                  },
                 },
-              },
           });
 
           if (!product) {
-            this.logger.warn(`Product not found: ${item.product_name || item.name}`);
+            this.logger.warn(
+              `Product not found: ${item.product_name || item.name}`,
+            );
             const unitPrice = Number(item.unitPrice) || Number(item.price) || 0;
             const quantity = Number(item.quantity) || 1;
             const itemTotal = unitPrice * quantity;
@@ -124,7 +132,9 @@ export class OrderService {
               data: { stock: { decrement: quantity } },
             });
           } else {
-            this.logger.warn(`Over-selling product ${product.name} (Stock: ${product.stock}, Req: ${quantity})`);
+            this.logger.warn(
+              `Over-selling product ${product.name} (Stock: ${product.stock}, Req: ${quantity})`,
+            );
           }
 
           const unitPrice = Number(product.price); // MANDATORY: Use actual DB price for accuracy
@@ -141,7 +151,8 @@ export class OrderService {
         }
       } else {
         // Handle string/generic items
-        const itemName = typeof data.items === 'string' ? data.items : 'Generic Item';
+        const itemName =
+          typeof data.items === 'string' ? data.items : 'Generic Item';
         orderItemsToCreate.push({
           name: itemName,
           quantity: 1,
@@ -160,8 +171,10 @@ export class OrderService {
 
       // Total Price is the sum.
       const finalTotalPrice = finalSubTotal + finalDeliveryFee;
-      
-      const finalStatus = hasMissingProducts ? 'PENDING' : (data.status || 'CONFIRMED');
+
+      const finalStatus = hasMissingProducts
+        ? 'PENDING'
+        : data.status || 'CONFIRMED';
 
       // 3. Create Order
       const order = await tx.order.create({
@@ -170,10 +183,13 @@ export class OrderService {
           shopId: shopId,
           customerName: data.name || data.customer_name || 'Facebook User',
           customerPhone: data.phone || data.customer_phone || '',
-          customerAddress: data.address || data.customer_address || 'Unknown Address',
+          customerAddress:
+            data.address || data.customer_address || 'Unknown Address',
           orderItems: {
-            create: orderItemsToCreate.map(i => ({
-              product: i.productId ? { connect: { id: i.productId } } : undefined,
+            create: orderItemsToCreate.map((i) => ({
+              product: i.productId
+                ? { connect: { id: i.productId } }
+                : undefined,
               name: i.name,
               quantity: i.quantity,
               unitPrice: i.unitPrice,
@@ -187,11 +203,15 @@ export class OrderService {
           rawExtract: {
             ...data,
             deliveryChargeApplied: finalDeliveryFee,
-            calculatedSubTotal: finalSubTotal
+            calculatedSubTotal: finalSubTotal,
           },
           status: finalStatus,
-          source: ['MANUAL', 'AI', 'WEB'].includes(data.source) ? data.source : 'AI',
-          appointmentDate: data.appointmentDate ? new Date(data.appointmentDate) : null,
+          source: ['MANUAL', 'AI', 'WEB'].includes(data.source)
+            ? data.source
+            : 'AI',
+          appointmentDate: data.appointmentDate
+            ? new Date(data.appointmentDate)
+            : null,
           serviceNotes: data.serviceNotes || null,
         },
       });
@@ -283,10 +303,15 @@ export class OrderService {
         .sendNewOrderAlert(shop.email, createdOrder, shop.name)
         .catch((e) => this.logger.warn(`Failed alert: ${e.message}`));
     }
-    const customerEmail = data.email || data.customerEmail || data.customer_email;
+    const customerEmail =
+      data.email || data.customerEmail || data.customer_email;
     if (customerEmail) {
       this.emailService
-        .sendOrderConfirmation(customerEmail, createdOrder, shop?.name || 'Shop')
+        .sendOrderConfirmation(
+          customerEmail,
+          createdOrder,
+          shop?.name || 'Shop',
+        )
         .catch((e) => this.logger.warn(`Failed confirm: ${e.message}`));
     }
 
@@ -350,7 +375,10 @@ export class OrderService {
     const [orders, total] = await Promise.all([
       this.db.order.findMany({
         where,
-        include: { orderItems: true, customer: { select: { id: true, name: true, profilePic: true } } },
+        include: {
+          orderItems: true,
+          customer: { select: { id: true, name: true, profilePic: true } },
+        },
         orderBy: { createdAt: 'desc' },
         skip,
         take: limit,
@@ -425,17 +453,25 @@ export class OrderService {
     // 2. Notify Customer if confirmed
     if (status === 'CONFIRMED') {
       const freshOrder = await this.findOne(order.id, ''); // skip shopId for internal update if needed, but findOne checks shopId
-      // Actually findOne with id and empty shopId might fail if it's strict. 
+      // Actually findOne with id and empty shopId might fail if it's strict.
       // Let's use db directly to be safe or update findOne.
       const orderWithCustomer = await this.db.order.findUnique({
         where: { id: order.id },
-        include: { customer: true, shop: true }
+        include: { customer: true, shop: true },
       });
 
       if (orderWithCustomer?.customer?.email && orderWithCustomer.shop) {
-        this.emailService.sendOrderConfirmation(orderWithCustomer.customer.email, orderWithCustomer, orderWithCustomer.shop.name).catch((err) =>
-          this.logger.warn(`Failed to send order confirmation email: ${err.message}`),
-        );
+        this.emailService
+          .sendOrderConfirmation(
+            orderWithCustomer.customer.email,
+            orderWithCustomer,
+            orderWithCustomer.shop.name,
+          )
+          .catch((err) =>
+            this.logger.warn(
+              `Failed to send order confirmation email: ${err.message}`,
+            ),
+          );
       }
     }
 
@@ -452,7 +488,7 @@ export class OrderService {
     ) {
       const orderWithShop = await this.db.order.findUnique({
         where: { id: order.id },
-        include: { shop: true }
+        include: { shop: true },
       });
 
       const rawData = order.rawExtract as any;
@@ -465,7 +501,11 @@ export class OrderService {
         }
 
         try {
-          const systemPrompt = await this.aiService.buildSystemPrompt(orderWithShop.shop as any, 'chat', 'Order update notification');
+          const systemPrompt = await this.aiService.buildSystemPrompt(
+            orderWithShop.shop as any,
+            'chat',
+            'Order update notification',
+          );
           const enrichedPrompt = `${systemPrompt}\n\n### PROACTIVE NOTIFICATION TASK\n${situationalPrompt}\n\nYou must act as the AI assistant and generate the response. Write ONLY a JSON object in this format:\n{"intent": "GENERAL_QUERY", "reply_message": "your proactive message here"}\n`;
 
           const aiResponse = await this.aiService.callAi(
@@ -473,29 +513,43 @@ export class OrderService {
             [],
             'Generate proactive notification',
             undefined,
-            true
+            true,
           );
 
           if (aiResponse?.reply_message) {
-            await this.facebookService.sendMessage(
-              rawData.psid,
-              aiResponse.reply_message,
-              orderWithShop.shop.accessToken || ''
-            ).catch(err => this.logger.error(`Failed to send proactive message: ${err.message}`));
+            await this.facebookService
+              .sendMessage(
+                rawData.psid,
+                aiResponse.reply_message,
+                orderWithShop.shop.accessToken || '',
+              )
+              .catch((err) =>
+                this.logger.error(
+                  `Failed to send proactive message: ${err.message}`,
+                ),
+              );
           } else {
             throw new Error('AI returned empty proactive message');
           }
         } catch (aiErr) {
-          this.logger.error(`Failed to generate proactive AI response: ${aiErr.message}`);
+          this.logger.error(
+            `Failed to generate proactive AI response: ${aiErr.message}`,
+          );
           let fallbackMessage = `⚠️ Delivery Update: Your parcel (${trackingId}) is currently on hold. Our team is working to resolve this.`;
           if (shipmentStatus.includes('return')) {
             fallbackMessage = `🚚 Delivery Update: Your parcel (${trackingId}) has been returned by the courier. Please contact us if you need further assistance.`;
           }
-          await this.facebookService.sendMessage(
-            rawData.psid,
-            fallbackMessage,
-            orderWithShop.shop.accessToken || ''
-          ).catch(err => this.logger.error(`Failed to send proactive fallback message: ${err.message}`));
+          await this.facebookService
+            .sendMessage(
+              rawData.psid,
+              fallbackMessage,
+              orderWithShop.shop.accessToken || '',
+            )
+            .catch((err) =>
+              this.logger.error(
+                `Failed to send proactive fallback message: ${err.message}`,
+              ),
+            );
         }
       }
     }
@@ -538,31 +592,61 @@ export class OrderService {
     if (data.status && data.status !== order.status) {
       const orderWithCustomer = await this.db.order.findUnique({
         where: { id },
-        include: { customer: true, shop: true }
+        include: { customer: true, shop: true },
       });
 
       if (orderWithCustomer?.customer?.email && orderWithCustomer.shop) {
         const shopName = orderWithCustomer.shop.name;
 
         if (data.status === 'CONFIRMED') {
-          this.emailService.sendOrderConfirmation(orderWithCustomer.customer.email, orderWithCustomer, shopName).catch(err =>
-            this.logger.warn(`Failed to send confirmation email: ${err.message}`)
-          );
+          this.emailService
+            .sendOrderConfirmation(
+              orderWithCustomer.customer.email,
+              orderWithCustomer,
+              shopName,
+            )
+            .catch((err) =>
+              this.logger.warn(
+                `Failed to send confirmation email: ${err.message}`,
+              ),
+            );
         } else if (data.status === 'SHIPPED') {
-          const trackingUrl = updatedOrder.courierName === 'RedX'
-            ? `https://redx.com.bd/track-parcel/?trackingId=${updatedOrder.trackingId}`
-            : undefined;
-          this.emailService.sendShippingUpdate(orderWithCustomer.customer.email, updatedOrder, shopName, trackingUrl).catch(err =>
-            this.logger.warn(`Failed to send shipping email: ${err.message}`)
-          );
+          const trackingUrl =
+            updatedOrder.courierName === 'RedX'
+              ? `https://redx.com.bd/track-parcel/?trackingId=${updatedOrder.trackingId}`
+              : undefined;
+          this.emailService
+            .sendShippingUpdate(
+              orderWithCustomer.customer.email,
+              updatedOrder,
+              shopName,
+              trackingUrl,
+            )
+            .catch((err) =>
+              this.logger.warn(`Failed to send shipping email: ${err.message}`),
+            );
         } else if (data.status === 'CANCELLED') {
-          this.emailService.sendOrderCancelled(orderWithCustomer.customer.email, orderWithCustomer, shopName).catch(err =>
-            this.logger.warn(`Failed to send cancellation email: ${err.message}`)
-          );
+          this.emailService
+            .sendOrderCancelled(
+              orderWithCustomer.customer.email,
+              orderWithCustomer,
+              shopName,
+            )
+            .catch((err) =>
+              this.logger.warn(
+                `Failed to send cancellation email: ${err.message}`,
+              ),
+            );
         } else if (data.status === 'RETURNED') {
-          this.emailService.sendOrderReturned(orderWithCustomer.customer.email, orderWithCustomer, shopName).catch(err =>
-            this.logger.warn(`Failed to send return email: ${err.message}`)
-          );
+          this.emailService
+            .sendOrderReturned(
+              orderWithCustomer.customer.email,
+              orderWithCustomer,
+              shopName,
+            )
+            .catch((err) =>
+              this.logger.warn(`Failed to send return email: ${err.message}`),
+            );
         }
       }
     }
@@ -634,12 +718,18 @@ export class OrderService {
           ...(dto.customerName && { customerName: dto.customerName }),
           ...(dto.customerPhone && { customerPhone: dto.customerPhone }),
           ...(dto.deliveryAddress && { customerAddress: dto.deliveryAddress }),
-          ...(dto.deliveryAreaId !== undefined && { deliveryAreaId: dto.deliveryAreaId }),
-          ...(dto.deliveryAreaName && { deliveryAreaName: dto.deliveryAreaName }),
+          ...(dto.deliveryAreaId !== undefined && {
+            deliveryAreaId: dto.deliveryAreaId,
+          }),
+          ...(dto.deliveryAreaName && {
+            deliveryAreaName: dto.deliveryAreaName,
+          }),
           ...(dto.cashCollectionAmount !== undefined && {
             cashCollectionAmount: dto.cashCollectionAmount,
           }),
-          ...(dto.parcelWeight !== undefined && { parcelWeight: dto.parcelWeight }),
+          ...(dto.parcelWeight !== undefined && {
+            parcelWeight: dto.parcelWeight,
+          }),
         },
       });
     }
@@ -650,7 +740,8 @@ export class OrderService {
     });
 
     // ── 3. Validate required RedX fields ────────────────────────────────────
-    const areaId: number | undefined = fresh.deliveryAreaId ?? dto.deliveryAreaId;
+    const areaId: number | undefined =
+      fresh.deliveryAreaId ?? dto.deliveryAreaId;
     if (!areaId) {
       throw new BadRequestException(
         'delivery_area_id is required before pushing to RedX. Select a delivery area.',
@@ -661,7 +752,7 @@ export class OrderService {
       fresh.deliveryAreaName ?? dto.deliveryAreaName ?? 'Unknown Area';
 
     // ── 4. Generate invoice number if not already set ────────────────────────
-    let invoiceNumber: string = (fresh as any).invoiceNumber;
+    let invoiceNumber: string = fresh.invoiceNumber;
     if (!invoiceNumber) {
       invoiceNumber = this.generateInvoiceNumber();
       await (this.db.order as any).update({
@@ -700,7 +791,10 @@ export class OrderService {
       value: cashAmount,
     };
 
-    const shipment = await this.redxService.createParcel(parcelPayload, shop.redxToken);
+    const shipment = await this.redxService.createParcel(
+      parcelPayload,
+      shop.redxToken,
+    );
 
     // ── 7. Update order to SHIPPED ───────────────────────────────────────────
     const updatedOrder = await (this.db.order as any).update({
@@ -720,7 +814,7 @@ export class OrderService {
     );
 
     // ── 8. Notify customer via Facebook Messenger ────────────────────────────
-    const rawData = (order.rawExtract ?? fresh.rawExtract) as any;
+    const rawData = order.rawExtract ?? fresh.rawExtract;
     if (rawData?.psid && shop.accessToken) {
       const trackingUrl = `https://redx.com.bd/track-parcel/?trackingId=${shipment.trackingId}`;
       const message = [
@@ -742,16 +836,27 @@ export class OrderService {
       this.facebookService
         .sendMessage(rawData.psid, message, shop.accessToken)
         .catch((err) =>
-          this.logger.warn(`Could not send tracking message to ${rawData.psid}: ${err.message}`),
+          this.logger.warn(
+            `Could not send tracking message to ${rawData.psid}: ${err.message}`,
+          ),
         );
     }
 
     // ── 9. Notify customer via Email ────────────────────────────
     if (updatedOrder.customer?.email && shop) {
       const trackingUrl = `https://redx.com.bd/track-parcel/?trackingId=${shipment.trackingId}`;
-      this.emailService.sendShippingUpdate(updatedOrder.customer.email, updatedOrder, shop.name, trackingUrl).catch(err =>
-        this.logger.warn(`Failed to send shipping email for order ${orderId}: ${err.message}`)
-      );
+      this.emailService
+        .sendShippingUpdate(
+          updatedOrder.customer.email,
+          updatedOrder,
+          shop.name,
+          trackingUrl,
+        )
+        .catch((err) =>
+          this.logger.warn(
+            `Failed to send shipping email for order ${orderId}: ${err.message}`,
+          ),
+        );
     }
 
     return updatedOrder;
@@ -786,7 +891,12 @@ export class OrderService {
       );
     }
 
-    if (dto.customerName || dto.customerPhone || dto.customerAddress || dto.totalAmount !== undefined) {
+    if (
+      dto.customerName ||
+      dto.customerPhone ||
+      dto.customerAddress ||
+      dto.totalAmount !== undefined
+    ) {
       await this.db.order.update({
         where: { id: orderId },
         data: {
@@ -798,11 +908,17 @@ export class OrderService {
       });
     }
 
-    const freshOrder = await this.db.order.findUnique({ where: { id: orderId } });
+    const freshOrder = await this.db.order.findUnique({
+      where: { id: orderId },
+    });
 
     const shop = await (this.db.shop as any).findUnique({
       where: { id: shopId },
-      select: { courierProvider: true, courierApiKey: true, courierSecretKey: true },
+      select: {
+        courierProvider: true,
+        courierApiKey: true,
+        courierSecretKey: true,
+      },
     });
 
     if (!shop) throw new NotFoundException('Shop not found.');
@@ -830,13 +946,23 @@ export class OrderService {
       include: { orderItems: true, customer: true },
     });
 
-    this.logger.log(`Order ${orderId} pushed to ${shipment.courier}. Consignment: ${shipment.consignmentId}`);
+    this.logger.log(
+      `Order ${orderId} pushed to ${shipment.courier}. Consignment: ${shipment.consignmentId}`,
+    );
 
     // Notify customer via Email
     if (updatedOrder.customer?.email && shop) {
-      this.emailService.sendShippingUpdate(updatedOrder.customer.email, updatedOrder, shop.name).catch(err =>
-        this.logger.warn(`Failed to send shipping email for order ${orderId}: ${err.message}`)
-      );
+      this.emailService
+        .sendShippingUpdate(
+          updatedOrder.customer.email,
+          updatedOrder,
+          shop.name,
+        )
+        .catch((err) =>
+          this.logger.warn(
+            `Failed to send shipping email for order ${orderId}: ${err.message}`,
+          ),
+        );
     }
 
     return updatedOrder;
@@ -851,10 +977,13 @@ export class OrderService {
 
     const shop = await this.db.shop.findUnique({
       where: { id: shopId },
-      select: { plan: true, trialEndsAt: true, subscriptionEndsAt: true }
+      select: { plan: true, trialEndsAt: true, subscriptionEndsAt: true },
     });
 
-    const { start: startDate, end: endDate } = await this.usageService.getUsagePeriod(shop || { id: shopId, plan: 'FREE' });
+    const { start: startDate, end: endDate } =
+      await this.usageService.getUsagePeriod(
+        shop || { id: shopId, plan: 'FREE' },
+      );
 
     // Optimized aggregations using database
     const [
@@ -868,7 +997,7 @@ export class OrderService {
       withOrdersCount,
       recentOrders,
       currentMonthMessages,
-      currentMonthOrders
+      currentMonthOrders,
     ] = await Promise.all([
       // 1. Total Revenue & Total Orders
       this.db.order.aggregate({
@@ -922,7 +1051,7 @@ export class OrderService {
         where: { shopId },
         orderBy: { createdAt: 'desc' },
         take: 5,
-        include: { orderItems: true }
+        include: { orderItems: true },
       }),
       // 10. Current Month AI Messages Usage
       this.db.usageLog.count({
@@ -948,30 +1077,30 @@ export class OrderService {
     // Customer Retention: % of customers with > 1 order
     const repeatCustomersCount = repeatsData.length;
     const totalCustomersWithOrders = withOrdersCount.length;
-    const customerRetention = totalCustomersWithOrders > 0
-      ? (repeatCustomersCount / totalCustomersWithOrders) * 100
-      : 0;
+    const customerRetention =
+      totalCustomersWithOrders > 0
+        ? (repeatCustomersCount / totalCustomersWithOrders) * 100
+        : 0;
 
     // Conversion Rate: Orders / Conversations
-    const conversionRate = totalConversations > 0 ? (totalOrders / totalConversations) * 100 : 0;
+    const conversionRate =
+      totalConversations > 0 ? (totalOrders / totalConversations) * 100 : 0;
 
     // Traffic Source Distribution Map
     const trafficMap: Record<string, number> = { AI: 0, MANUAL: 0, WEB: 0 };
-    trafficSourceDistribution.forEach(item => {
+    trafficSourceDistribution.forEach((item) => {
       trafficMap[item.source] = item._count._all;
     });
 
     // Calculate Monthly Revenue (Last 6 Months)
-    const revenueChart = new Array(6)
-      .fill(0)
-      .map((_, i) => {
-        const d = new Date();
-        d.setMonth(now.getMonth() - (5 - i));
-        return {
-          month: d.toLocaleString('default', { month: 'short' }),
-          value: 0,
-        };
-      });
+    const revenueChart = new Array(6).fill(0).map((_, i) => {
+      const d = new Date();
+      d.setMonth(now.getMonth() - (5 - i));
+      return {
+        month: d.toLocaleString('default', { month: 'short' }),
+        value: 0,
+      };
+    });
 
     revenueHistory.forEach((o: any) => {
       const date = new Date(o.createdAt);
@@ -984,62 +1113,99 @@ export class OrderService {
     });
 
     // Order Status Distribution for Pie Chart
-    const orderStatusDistribution = statusDistribution.map(item => ({
+    const orderStatusDistribution = statusDistribution.map((item) => ({
       name: item.status,
       value: item._count._all,
     }));
 
     // --- AI-Driven Insights (Sampled for Performance) ---
 
-    const [recentConvs, recentAiOrders, recentRegionalOrders] = await Promise.all([
-      // Sample last 200 conversations for sentiment
-      this.db.conversation.findMany({
-        where: { shopId },
-        select: { lastMessage: true, tags: true },
-        orderBy: { updatedAt: 'desc' },
-        take: 200
-      }),
-      // Sample last 100 AI orders for haggling index
-      this.db.order.findMany({
-        where: { shopId, source: 'AI' },
-        select: { rawExtract: true },
-        orderBy: { createdAt: 'desc' },
-        take: 100
-      }),
-      // Sample last 500 orders for regional breakdown
-      this.db.order.findMany({
-        where: { shopId, customerAddress: { not: null } },
-        select: { customerAddress: true },
-        orderBy: { createdAt: 'desc' },
-        take: 500
-      })
-    ]);
+    const [recentConvs, recentAiOrders, recentRegionalOrders] =
+      await Promise.all([
+        // Sample last 200 conversations for sentiment
+        this.db.conversation.findMany({
+          where: { shopId },
+          select: { lastMessage: true, tags: true },
+          orderBy: { updatedAt: 'desc' },
+          take: 200,
+        }),
+        // Sample last 100 AI orders for haggling index
+        this.db.order.findMany({
+          where: { shopId, source: 'AI' },
+          select: { rawExtract: true },
+          orderBy: { createdAt: 'desc' },
+          take: 100,
+        }),
+        // Sample last 500 orders for regional breakdown
+        this.db.order.findMany({
+          where: { shopId, customerAddress: { not: null } },
+          select: { customerAddress: true },
+          orderBy: { createdAt: 'desc' },
+          take: 500,
+        }),
+      ]);
 
     // 1. Customer Sentiment Analysis (on Sample)
-    let happy = 0, neutral = 0, annoyed = 0, angry = 0;
-    recentConvs.forEach(conv => {
+    let happy = 0,
+      neutral = 0,
+      annoyed = 0,
+      angry = 0;
+    recentConvs.forEach((conv) => {
       const msg = (conv.lastMessage || '').toLowerCase();
-      if (conv.tags.includes('VIP') || msg.includes('thank') || msg.includes('valo') || msg.includes('khushi')) happy++;
-      else if (conv.tags.includes('High Return Risk') || msg.includes('dennai') || msg.includes('kharap') || msg.includes('late')) angry++;
+      if (
+        conv.tags.includes('VIP') ||
+        msg.includes('thank') ||
+        msg.includes('valo') ||
+        msg.includes('khushi')
+      )
+        happy++;
+      else if (
+        conv.tags.includes('High Return Risk') ||
+        msg.includes('dennai') ||
+        msg.includes('kharap') ||
+        msg.includes('late')
+      )
+        angry++;
       else if (msg.includes('kobe') || msg.includes('wait')) annoyed++;
       else neutral++;
     });
     const totalSentiment = happy + neutral + annoyed + angry;
-    const sentimentScore = totalSentiment > 0 ? (happy * 100 + neutral * 70 + annoyed * 40 + angry * 10) / totalSentiment : 70;
+    const sentimentScore =
+      totalSentiment > 0
+        ? (happy * 100 + neutral * 70 + annoyed * 40 + angry * 10) /
+          totalSentiment
+        : 70;
 
     // 2. Haggling Index (on Sample)
-    const hagglingOrders = recentAiOrders.filter(o => {
+    const hagglingOrders = recentAiOrders.filter((o) => {
       const msg = JSON.stringify(o.rawExtract || {}).toLowerCase();
-      return msg.includes('discount') || msg.includes('kom') || msg.includes('koto rakha');
+      return (
+        msg.includes('discount') ||
+        msg.includes('kom') ||
+        msg.includes('koto rakha')
+      );
     }).length;
-    const hagglingIndex = recentAiOrders.length > 0 ? (hagglingOrders / recentAiOrders.length) * 100 : 0;
+    const hagglingIndex =
+      recentAiOrders.length > 0
+        ? (hagglingOrders / recentAiOrders.length) * 100
+        : 0;
 
     // 3. Regional Sales Breakdown (on Sample)
-    const districts = ['Dhaka', 'Chittagong', 'Sylhet', 'Rajshahi', 'Khulna', 'Barisal', 'Rangpur', 'Gazipur', 'Narayanganj'];
+    const districts = [
+      'Dhaka',
+      'Chittagong',
+      'Sylhet',
+      'Rajshahi',
+      'Khulna',
+      'Barisal',
+      'Rangpur',
+      'Gazipur',
+      'Narayanganj',
+    ];
     const regionalMap: Record<string, number> = {};
-    recentRegionalOrders.forEach(o => {
+    recentRegionalOrders.forEach((o) => {
       const addr = (o.customerAddress || '').toLowerCase();
-      const match = districts.find(d => addr.includes(d.toLowerCase()));
+      const match = districts.find((d) => addr.includes(d.toLowerCase()));
       if (match) regionalMap[match] = (regionalMap[match] || 0) + 1;
       else regionalMap['Other'] = (regionalMap['Other'] || 0) + 1;
     });
@@ -1071,9 +1237,9 @@ export class OrderService {
         missedOpportunities: [
           { name: 'Saree', interest: 12 },
           { name: 'Panjabi', interest: 8 },
-          { name: 'Hijab', interest: 5 }
-        ]
-      }
+          { name: 'Hijab', interest: 5 },
+        ],
+      },
     };
   }
 

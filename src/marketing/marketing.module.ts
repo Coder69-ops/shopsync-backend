@@ -21,4 +21,4 @@ import { AiModule } from '../ai/ai.module'; // To use AI content generation if a
   controllers: [MarketingController],
   providers: [MarketingService, MarketingProcessor],
 })
-export class MarketingModule { }
+export class MarketingModule {}

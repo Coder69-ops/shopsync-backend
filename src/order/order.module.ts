@@ -14,9 +14,20 @@ import { ShopifyModule } from '../shopify/shopify.module';
 import { AiModule } from '../ai/ai.module';
 
 @Module({
-  imports: [DatabaseModule, CourierModule, FacebookModule, CustomerModule, UsageModule, EmailModule, forwardRef(() => RedxModule), forwardRef(() => WooCommerceModule), forwardRef(() => ShopifyModule), forwardRef(() => AiModule)],
+  imports: [
+    DatabaseModule,
+    CourierModule,
+    FacebookModule,
+    CustomerModule,
+    UsageModule,
+    EmailModule,
+    forwardRef(() => RedxModule),
+    forwardRef(() => WooCommerceModule),
+    forwardRef(() => ShopifyModule),
+    forwardRef(() => AiModule),
+  ],
   controllers: [OrderController],
   providers: [OrderService],
   exports: [OrderService],
 })
-export class OrderModule { }
+export class OrderModule {}

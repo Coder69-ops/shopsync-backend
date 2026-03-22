@@ -24,7 +24,7 @@ import { ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('shop')
 export class ShopController {
-  constructor(private readonly shopService: ShopService) { }
+  constructor(private readonly shopService: ShopService) {}
 
   @Roles(UserRole.SUPERADMIN)
   @Post()
@@ -42,7 +42,7 @@ export class ShopController {
 
   @Roles(UserRole.SUPERADMIN, UserRole.ADMIN)
   @Get('me')
-  @ApiOperation({ summary: 'Get current user\'s shop' })
+  @ApiOperation({ summary: "Get current user's shop" })
   async findMe(@Req() req: any) {
     if (!req.user.shopId) {
       throw new UnauthorizedException('User has no shop assigned');

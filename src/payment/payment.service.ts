@@ -24,7 +24,7 @@ export class PaymentService {
     private readonly notificationService: NotificationService,
     private readonly paymentMethodService: PaymentMethodService,
     private readonly emailService: EmailService,
-  ) { }
+  ) {}
 
   async getMonthlyPrice(): Promise<number> {
     const config = await this.systemConfigService.getConfig();
@@ -92,20 +92,24 @@ export class PaymentService {
       if (data.promoCodeId) {
         await (this.db.shop as any).update({
           where: { id: shopId },
-          data: { referredByPromoId: data.promoCodeId }
+          data: { referredByPromoId: data.promoCodeId },
         });
       }
 
       // Notify Merchant via Email
       if (payment.shop?.email) {
-        this.emailService.sendPaymentReceived(
-          payment.shop.email,
-          Number(payment.amount),
-          payment.transactionId,
-          payment.shop.name
-        ).catch(err =>
-          this.logger.warn(`Failed to send payment receipt email: ${err.message}`)
-        );
+        this.emailService
+          .sendPaymentReceived(
+            payment.shop.email,
+            Number(payment.amount),
+            payment.transactionId,
+            payment.shop.name,
+          )
+          .catch((err) =>
+            this.logger.warn(
+              `Failed to send payment receipt email: ${err.message}`,
+            ),
+          );
       }
 
       return payment;
@@ -136,10 +140,10 @@ export class PaymentService {
       where: {
         OR: search
           ? [
-            { transactionId: { contains: search, mode: 'insensitive' } },
-            { senderNumber: { contains: search, mode: 'insensitive' } },
-            { shop: { name: { contains: search, mode: 'insensitive' } } },
-          ]
+              { transactionId: { contains: search, mode: 'insensitive' } },
+              { senderNumber: { contains: search, mode: 'insensitive' } },
+              { shop: { name: { contains: search, mode: 'insensitive' } } },
+            ]
           : undefined,
         status: status && status !== 'ALL' ? (status as any) : undefined,
         createdAt: {
@@ -205,21 +209,23 @@ export class PaymentService {
       // 0. Affiliate Commission Math (50-25-12.5 Rule)
       const amount = Number(payment.amount);
       let affiliateCommission = 0;
-      let renewalCount = shop.renewalCount + 1;
-      let invoiceNumber = renewalCount;
+      const renewalCount = shop.renewalCount + 1;
+      const invoiceNumber = renewalCount;
 
       if (shop.referredByPromoId && !shop.isRecycled) {
-        if (renewalCount === 1) affiliateCommission = amount * 0.50;
+        if (renewalCount === 1) affiliateCommission = amount * 0.5;
         else if (renewalCount === 2) affiliateCommission = amount * 0.25;
         else if (renewalCount === 3) affiliateCommission = amount * 0.125;
       } else if (shop.isRecycled) {
-        this.logger.log(`Bypassing affiliate commission for recycled shop: ${shop.id}`);
+        this.logger.log(
+          `Bypassing affiliate commission for recycled shop: ${shop.id}`,
+        );
       }
 
       // 1. Update Payment
       const updatedPayment = await tx.payment.update({
         where: { id },
-        data: { 
+        data: {
           status: 'APPROVED',
           invoiceNumber,
           affiliateCommission,
@@ -308,12 +314,16 @@ export class PaymentService {
 
       // 8. Notify Merchant via Email
       if (shop.email) {
-        this.emailService.sendSubscriptionActivated(
-          shop.email,
-          plan === 'PRO' ? 'ShopSync Pro' : 'ShopSync Starter'
-        ).catch(err =>
-          this.logger.warn(`Failed to send subscription activation email: ${err.message}`)
-        );
+        this.emailService
+          .sendSubscriptionActivated(
+            shop.email,
+            plan === 'PRO' ? 'ShopSync Pro' : 'ShopSync Starter',
+          )
+          .catch((err) =>
+            this.logger.warn(
+              `Failed to send subscription activation email: ${err.message}`,
+            ),
+          );
       }
 
       return updatedPayment;
@@ -362,11 +372,17 @@ export class PaymentService {
     }
 
     // NEW: Notify Merchant via Email
-    const shop = await this.db.shop.findUnique({ where: { id: payment.shopId } });
+    const shop = await this.db.shop.findUnique({
+      where: { id: payment.shopId },
+    });
     if (shop?.email) {
-      this.emailService.sendPaymentRejected(shop.email, reason).catch(err =>
-        this.logger.warn(`Failed to send payment rejection email: ${err.message}`)
-      );
+      this.emailService
+        .sendPaymentRejected(shop.email, reason)
+        .catch((err) =>
+          this.logger.warn(
+            `Failed to send payment rejection email: ${err.message}`,
+          ),
+        );
     }
 
     return updatedPayment;

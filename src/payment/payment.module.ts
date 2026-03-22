@@ -22,4 +22,4 @@ import { EmailModule } from '../email/email.module';
   providers: [PaymentService, PaymentMethodService],
   exports: [PaymentService, PaymentMethodService],
 })
-export class PaymentModule { }
+export class PaymentModule {}

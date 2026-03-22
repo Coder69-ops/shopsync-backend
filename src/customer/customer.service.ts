@@ -3,7 +3,7 @@ import { DatabaseService } from '../database/database.service';
 
 @Injectable()
 export class CustomerService {
-  constructor(private readonly db: DatabaseService) { }
+  constructor(private readonly db: DatabaseService) {}
 
   async findAll(shopId: string, page: number = 1, limit: number = 20) {
     const skip = (page - 1) * limit;
@@ -63,7 +63,12 @@ export class CustomerService {
   }
 
   // Find by External ID or Create if not exists
-  async findOrCreate(shopId: string, psid: string, name?: string, email?: string) {
+  async findOrCreate(
+    shopId: string,
+    psid: string,
+    name?: string,
+    email?: string,
+  ) {
     return this.db.customer.upsert({
       where: {
         shopId_externalId_platform: {
@@ -157,7 +162,7 @@ export class CustomerService {
       // Aggregate total revenue for the shop
       this.db.order.aggregate({
         where: { shopId, status: { not: 'CANCELLED' } },
-        _sum: { totalPrice: true }
+        _sum: { totalPrice: true },
       }),
     ]);
 
@@ -168,7 +173,7 @@ export class CustomerService {
     const growthRate =
       lastMonthCustomers > 0
         ? ((currentMonthCustomers - lastMonthCustomers) / lastMonthCustomers) *
-        100
+          100
         : currentMonthCustomers > 0
           ? 100
           : 0;

@@ -6,23 +6,27 @@ import { FacebookCapiService } from './facebook-capi.service';
 
 @BullProcessor('facebook-capi')
 export class FacebookCapiProcessor extends WorkerHost {
-    private readonly logger = new Logger(FacebookCapiProcessor.name);
+  private readonly logger = new Logger(FacebookCapiProcessor.name);
 
-    constructor(private readonly fbCapiService: FacebookCapiService) {
-        super();
-    }
+  constructor(private readonly fbCapiService: FacebookCapiService) {
+    super();
+  }
 
-    async process(job: Job) {
-        if (job.name === 'send-start-trial') {
-            this.logger.debug('Start processing Facebook CAPI StartTrial event...');
-            try {
-                const { userData, reqParams } = job.data;
-                await this.fbCapiService.sendStartTrialEvent(userData, reqParams);
-                this.logger.debug('Successfully processed Facebook CAPI StartTrial event.');
-            } catch (error: any) {
-                this.logger.error(`Failed to process Facebook CAPI StartTrial event: ${error.message}`);
-                throw error;
-            }
-        }
+  async process(job: Job) {
+    if (job.name === 'send-start-trial') {
+      this.logger.debug('Start processing Facebook CAPI StartTrial event...');
+      try {
+        const { userData, reqParams } = job.data;
+        await this.fbCapiService.sendStartTrialEvent(userData, reqParams);
+        this.logger.debug(
+          'Successfully processed Facebook CAPI StartTrial event.',
+        );
+      } catch (error: any) {
+        this.logger.error(
+          `Failed to process Facebook CAPI StartTrial event: ${error.message}`,
+        );
+        throw error;
+      }
     }
+  }
 }

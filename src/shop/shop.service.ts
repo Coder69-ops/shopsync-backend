@@ -10,7 +10,7 @@ import * as bcrypt from 'bcrypt';
 
 @Injectable()
 export class ShopService {
-  constructor(private db: DatabaseService) { }
+  constructor(private db: DatabaseService) {}
 
   async create(createShopDto: CreateShopDto) {
     // Check if pageId already exists in facebook platform
@@ -292,7 +292,7 @@ export class ShopService {
 
     return {
       ...updatedShop,
-      pageId: (updatedShop.platformIds as any)?.facebook || null,
+      pageId: updatedShop.platformIds?.facebook || null,
     };
   }
 

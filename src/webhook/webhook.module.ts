@@ -25,4 +25,4 @@ import { InboxModule } from '../inbox/inbox.module';
   controllers: [WebhookController],
   providers: [WebhookService, WebhookProcessor],
 })
-export class WebhookModule { }
+export class WebhookModule {}

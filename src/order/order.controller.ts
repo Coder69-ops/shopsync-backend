@@ -17,7 +17,12 @@ import { CreateOrderDto } from './dto/create-order.dto';
 import { PushToCourierDto } from './dto/push-to-courier.dto';
 import { PushToRedxDto } from './dto/push-to-redx.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
-import { ApiBearerAuth, ApiQuery, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiQuery,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
 import { CurrentUser } from '../auth/current-user.decorator';
 
 import { AiAnalyticsSchedulerService } from '../ai/ai-analytics-scheduler.service';
@@ -28,7 +33,7 @@ export class OrderController {
   constructor(
     private readonly orderService: OrderService,
     private readonly aiScheduler: AiAnalyticsSchedulerService,
-  ) { }
+  ) {}
 
   // ─── Metrics ──────────────────────────────────────────────────────────────
 
@@ -49,14 +54,20 @@ export class OrderController {
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard)
-  @ApiOperation({ summary: 'Manually trigger AI batch analysis for current shop' })
+  @ApiOperation({
+    summary: 'Manually trigger AI batch analysis for current shop',
+  })
   @Post('trigger-ai-analysis')
   async triggerAiAnalysis(
     @CurrentUser('shopId') shopId: string,
     @Body('days') days?: number,
   ) {
     await this.aiScheduler.triggerManualAnalysis(shopId, days || 1);
-    return { message: 'AI Analysis manually triggered. It may take a few minutes.', shopId, days: days || 1 };
+    return {
+      message: 'AI Analysis manually triggered. It may take a few minutes.',
+      shopId,
+      days: days || 1,
+    };
   }
 
   // ─── RedX helper — must be declared BEFORE `:id` routes ──────────────────
@@ -167,5 +178,3 @@ export class OrderController {
     return this.orderService.remove(id, shopId);
   }
 }
-
-

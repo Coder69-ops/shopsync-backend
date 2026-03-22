@@ -44,7 +44,7 @@ export class RedxWebhookController {
     @Inject(forwardRef(() => OrderService))
     private readonly orderService: OrderService,
     private readonly configService: ConfigService,
-  ) { }
+  ) {}
 
   /**
    * POST /webhooks/redx?token=<REDX_WEBHOOK_SECRET>
@@ -68,7 +68,9 @@ export class RedxWebhookController {
     @Query('token') queryToken: string,
   ) {
     // ── 1. Query-token auth ───────────────────────────────────────────────────
-    const expectedSecret = this.configService.get<string>('REDX_WEBHOOK_SECRET');
+    const expectedSecret = this.configService.get<string>(
+      'REDX_WEBHOOK_SECRET',
+    );
     if (expectedSecret) {
       if (queryToken !== expectedSecret) {
         this.logger.warn('RedX webhook: invalid query token');

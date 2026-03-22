@@ -12,7 +12,7 @@ export class MarketingService {
     private readonly db: DatabaseService,
     private readonly aiService: AiService,
     @InjectQueue('marketing-queue') private marketingQueue: Queue,
-  ) { }
+  ) {}
 
   async generateCopy(shopId: string, prompt: string) {
     const systemPrompt = `You are an expert E-commerce Marketing Copywriter for Bangladeshi merchants. 
@@ -30,7 +30,7 @@ export class MarketingService {
       [],
       prompt,
       undefined,
-      false
+      false,
     );
 
     return { copy: response };
@@ -57,7 +57,7 @@ export class MarketingService {
         _count: {
           select: { recipients: true, ordersGenerated: true },
         },
-      }
+      },
     });
   }
 
@@ -84,12 +84,12 @@ export class MarketingService {
     // CRM Filter logic
     if (campaign.audience === 'RECENT_24H') {
       const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
-      customers = customers.filter(c => c.updatedAt > twentyFourHoursAgo);
+      customers = customers.filter((c) => c.updatedAt > twentyFourHoursAgo);
     } else if (campaign.audience === 'VIP') {
-      customers = customers.filter(c => c.tags.includes('VIP'));
+      customers = customers.filter((c) => c.tags.includes('VIP'));
     }
 
-    const recipientsToCreate = customers.map(c => ({
+    const recipientsToCreate = customers.map((c) => ({
       campaignId: campaign.id,
       customerId: c.id,
       status: 'PENDING' as any,
@@ -99,17 +99,18 @@ export class MarketingService {
     if (recipientsToCreate.length > 0) {
       await this.db.campaignRecipient.createMany({
         data: recipientsToCreate,
-        skipDuplicates: true
+        skipDuplicates: true,
       });
     }
 
     const createdRecipients = await this.db.campaignRecipient.findMany({
-      where: { campaignId: campaign.id }
+      where: { campaignId: campaign.id },
     });
 
-    const delay = campaign.scheduledAt && campaign.scheduledAt > new Date()
-      ? campaign.scheduledAt.getTime() - Date.now()
-      : 0;
+    const delay =
+      campaign.scheduledAt && campaign.scheduledAt > new Date()
+        ? campaign.scheduledAt.getTime() - Date.now()
+        : 0;
 
     // Enqueue jobs on BullMQ
     for (const recipient of createdRecipients) {
@@ -120,7 +121,7 @@ export class MarketingService {
           recipientId: recipient.id,
           shopId: shopId,
         },
-        { delay }
+        { delay },
       );
     }
 
@@ -134,7 +135,7 @@ export class MarketingService {
         _count: {
           select: { recipients: true, ordersGenerated: true },
         },
-      }
+      },
     });
 
     if (!campaign) throw new Error('Campaign not found');
@@ -149,7 +150,9 @@ export class MarketingService {
     });
 
     const targeted = recipients.length;
-    const delivered = recipients.filter(r => r.status === 'DELIVERED' || r.status === 'SENT').length;
+    const delivered = recipients.filter(
+      (r) => r.status === 'DELIVERED' || r.status === 'SENT',
+    ).length;
     // For now, tracking read might require webhooks, assuming delivered = read for mock purposes if not tracking yet.
     // Or we just use dummy read counts based on status if we have 'READ' status. But schema has PENDING, SENT, DELIVERED, FAILED. Let's assume delivered means read for the mock funnel, or calculate a mock 'read' if status is DELIVERED.
     const read = Math.floor(delivered * 0.65); // Simplified estimation until read webhooks are fully mapped
@@ -159,7 +162,7 @@ export class MarketingService {
       delivered,
       read,
       ordersPlaced: campaign.ordersCount,
-      totalRevenue: Number(campaign.revenueGenerated)
+      totalRevenue: Number(campaign.revenueGenerated),
     };
 
     // Calculate a simple timeline (dummy for now if we don't have exact read timestamps)
@@ -171,11 +174,16 @@ export class MarketingService {
       { label: '24h+', reads: Math.floor(read * 0.05) },
     ];
 
-    // Format top 10 recipients 
-    const recentRecipients = recipients.slice(0, 10).map(r => ({
+    // Format top 10 recipients
+    const recentRecipients = recipients.slice(0, 10).map((r) => ({
       id: r.id,
       name: r.customer.name || 'Unknown',
-      status: r.status === 'DELIVERED' ? 'Read' : r.status === 'FAILED' ? 'Failed' : 'Delivered', // Mapping
+      status:
+        r.status === 'DELIVERED'
+          ? 'Read'
+          : r.status === 'FAILED'
+            ? 'Failed'
+            : 'Delivered', // Mapping
       converted: Math.random() > 0.8, // Mock conversion for now since order attribution isn't strictly tied to recipient row yet in this view
       time: r.updatedAt.toISOString(),
     }));
@@ -185,14 +193,28 @@ export class MarketingService {
       name: campaign.name,
       status: campaign.status,
       sentAt: campaign.sentAt ? campaign.sentAt.toISOString() : null,
-      scheduledAt: campaign.scheduledAt ? campaign.scheduledAt.toISOString() : null,
-      audienceRule: campaign.audience === 'RECENT_24H' ? 'Active 24H' : campaign.audience === 'VIP' ? 'VIP Customers' : 'All Subscribers',
+      scheduledAt: campaign.scheduledAt
+        ? campaign.scheduledAt.toISOString()
+        : null,
+      audienceRule:
+        campaign.audience === 'RECENT_24H'
+          ? 'Active 24H'
+          : campaign.audience === 'VIP'
+            ? 'VIP Customers'
+            : 'All Subscribers',
       messagePayload: campaign.message,
       cost: targeted * 0.5, // 0.50 Taka per message roughly
-      errorRate: targeted > 0 ? ((recipients.filter(r => r.status === 'FAILED').length / targeted) * 100).toFixed(1) : 0,
+      errorRate:
+        targeted > 0
+          ? (
+              (recipients.filter((r) => r.status === 'FAILED').length /
+                targeted) *
+              100
+            ).toFixed(1)
+          : 0,
       funnel,
       timeline,
-      recipients: recentRecipients
+      recipients: recentRecipients,
     };
   }
 }

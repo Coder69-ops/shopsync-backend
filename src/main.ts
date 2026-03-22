@@ -79,7 +79,8 @@ async function bootstrap() {
   const basicAuth = require('express-basic-auth');
   const authMiddleware = basicAuth({
     users: {
-      [process.env.BULL_BOARD_USER || 'admin']: process.env.BULL_BOARD_PASSWORD || 'ShopSync!@#2026',
+      [process.env.BULL_BOARD_USER || 'admin']:
+        process.env.BULL_BOARD_PASSWORD || 'ShopSync!@#2026',
     },
     challenge: true,
   });
@@ -100,11 +101,7 @@ async function bootstrap() {
     serverAdapter: serverAdapter,
   });
 
-  app.use(
-    '/admin/queues',
-    authMiddleware,
-    serverAdapter.getRouter()
-  );
+  app.use('/admin/queues', authMiddleware, serverAdapter.getRouter());
 
   await app.listen(process.env.PORT ?? 3000, '0.0.0.0');
 }

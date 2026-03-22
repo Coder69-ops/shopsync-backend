@@ -42,8 +42,12 @@ interface FacebookEvent {
 
 @Processor('chat-queue', {
   limiter: {
-    max: process.env.AI_RATE_LIMIT_MAX ? parseInt(process.env.AI_RATE_LIMIT_MAX, 10) : 290,
-    duration: process.env.AI_RATE_LIMIT_DURATION ? parseInt(process.env.AI_RATE_LIMIT_DURATION, 10) : 60000,
+    max: process.env.AI_RATE_LIMIT_MAX
+      ? parseInt(process.env.AI_RATE_LIMIT_MAX, 10)
+      : 290,
+    duration: process.env.AI_RATE_LIMIT_DURATION
+      ? parseInt(process.env.AI_RATE_LIMIT_DURATION, 10)
+      : 60000,
   },
 })
 export class WebhookProcessor extends WorkerHost {
@@ -155,7 +159,10 @@ export class WebhookProcessor extends WorkerHost {
             },
           });
 
-          const canReply = await this.usageService.canSendMessage(shop.id, shop);
+          const canReply = await this.usageService.canSendMessage(
+            shop.id,
+            shop,
+          );
           if (!canReply) {
             this.logger.warn(
               `Shop ${shop.id} message limit reached. Skipping comment reply.`,
@@ -172,7 +179,10 @@ export class WebhookProcessor extends WorkerHost {
 
           const { publicReply, privateReply, shouldSendDm } = aiResult;
 
-          if (aiResult.thought !== 'Fallback due to error' && aiResult.thought !== 'Trial Expired') {
+          if (
+            aiResult.thought !== 'Fallback due to error' &&
+            aiResult.thought !== 'Trial Expired'
+          ) {
             await this.db.usageLog.create({
               data: {
                 id: crypto.randomUUID(),
@@ -186,7 +196,7 @@ export class WebhookProcessor extends WorkerHost {
           const removeWatermark = await this.usageService.hasFeatureAccess(
             shop.id,
             'removeWatermark',
-            shop
+            shop,
           );
           let finalPublicReply = publicReply;
 
@@ -273,7 +283,7 @@ export class WebhookProcessor extends WorkerHost {
             const canUseVoice = await this.usageService.hasFeatureAccess(
               shop.id,
               'canUseVoiceAI',
-              shop
+              shop,
             );
             if (!canUseVoice) {
               this.logger.log(
@@ -330,11 +340,17 @@ export class WebhookProcessor extends WorkerHost {
 
           // 2. Fetch Profile ONLY if missing
           let profile = null;
-          if (!customer || !customer.name || customer.name === 'Messenger User') {
-            this.logger.log(`Fetching new Facebook profile for PSID: ${messaging.sender.id}`);
+          if (
+            !customer ||
+            !customer.name ||
+            customer.name === 'Messenger User'
+          ) {
+            this.logger.log(
+              `Fetching new Facebook profile for PSID: ${messaging.sender.id}`,
+            );
             profile = await this.facebookService.getUserProfile(
               messaging.sender.id,
-              shop.accessToken
+              shop.accessToken,
             );
           }
 
@@ -347,10 +363,12 @@ export class WebhookProcessor extends WorkerHost {
                 platform: 'FACEBOOK',
               },
             },
-            update: profile ? {
-              name: profile.name || undefined,
-              profilePic: profile.profilePic || undefined,
-            } : {},
+            update: profile
+              ? {
+                  name: profile.name || undefined,
+                  profilePic: profile.profilePic || undefined,
+                }
+              : {},
             create: {
               shopId: shop.id,
               externalId: messaging.sender.id,
@@ -368,10 +386,12 @@ export class WebhookProcessor extends WorkerHost {
                 psid: messaging.sender.id,
               },
             },
-            update: profile ? {
-              customerName: profile.name || undefined,
-              customerAvatar: profile.profilePic || undefined,
-            } : {},
+            update: profile
+              ? {
+                  customerName: profile.name || undefined,
+                  customerAvatar: profile.profilePic || undefined,
+                }
+              : {},
             create: {
               shopId: shop.id,
               psid: messaging.sender.id,
@@ -409,14 +429,15 @@ export class WebhookProcessor extends WorkerHost {
               .reverse()
               .slice(0, -1)
               .map((m: any) => ({
-                role: (m.sender === 'USER' ? 'user' : 'assistant') as
-                  | 'user'
-                  | 'assistant',
+                role: m.sender === 'USER' ? 'user' : 'assistant',
                 content: m.content || '',
               }));
 
           // 5. Get AI Response (Structured)
-          const canReply = await this.usageService.canSendMessage(shop.id, shop);
+          const canReply = await this.usageService.canSendMessage(
+            shop.id,
+            shop,
+          );
           if (!canReply) {
             const limitMessage =
               'Your AI message limit for the current cycle has been reached. Please upgrade your plan to continue using AI features.';
@@ -435,7 +456,10 @@ export class WebhookProcessor extends WorkerHost {
             history,
           );
 
-          if (aiResponse.thought !== 'Fallback due to error' && aiResponse.thought !== 'Trial Expired') {
+          if (
+            aiResponse.thought !== 'Fallback due to error' &&
+            aiResponse.thought !== 'Trial Expired'
+          ) {
             await this.db.usageLog.create({
               data: {
                 id: crypto.randomUUID(),
@@ -616,7 +640,7 @@ export class WebhookProcessor extends WorkerHost {
                 recentOrder &&
                 Math.abs(
                   Number(recentOrder.totalPrice) -
-                  (orderData.total_price || orderData.total_amount || 0),
+                    (orderData.total_price || orderData.total_amount || 0),
                 ) < 1
               ) {
                 this.logger.warn(
@@ -630,7 +654,9 @@ export class WebhookProcessor extends WorkerHost {
                 const deliveryFee = Number(shippingDetails?.charge) || 0;
 
                 if (deliveryFee > 0) {
-                  this.logger.log(`Applying AI-persisted delivery fee: ${deliveryFee} for PSID: ${messaging.sender.id}`);
+                  this.logger.log(
+                    `Applying AI-persisted delivery fee: ${deliveryFee} for PSID: ${messaging.sender.id}`,
+                  );
                 }
 
                 try {
@@ -667,7 +693,7 @@ export class WebhookProcessor extends WorkerHost {
                   });
 
                   // Generate Detailed Confirmation (Final Check)
-                  const rawExtract = createdOrder.rawExtract as any;
+                  const rawExtract = createdOrder.rawExtract;
                   const deliveryCharge = rawExtract?.deliveryChargeApplied || 0;
                   const totalAmount = Number(createdOrder.totalPrice);
 
@@ -687,8 +713,12 @@ export class WebhookProcessor extends WorkerHost {
                     `📦 **Items:**\n- ${itemsListString}\n\n` +
                     `Thank you for shopping with us! Our human agent will contact you shortly to confirm your order details and delivery.`;
                 } catch (orderError) {
-                  this.logger.warn(`Order creation failed for shop ${shop.id}: ${orderError.message}`);
-                  if (orderError.message.includes('limit for the current cycle')) {
+                  this.logger.warn(
+                    `Order creation failed for shop ${shop.id}: ${orderError.message}`,
+                  );
+                  if (
+                    orderError.message.includes('limit for the current cycle')
+                  ) {
                     responseText = `⚠️ ${orderError.message}`;
                   } else {
                     // Re-throw if it's a different kind of error (e.g. database down)
@@ -726,7 +756,7 @@ export class WebhookProcessor extends WorkerHost {
           const removeWatermark = await this.usageService.hasFeatureAccess(
             shop.id,
             'removeWatermark',
-            shop
+            shop,
           );
           if (!removeWatermark) {
             responseText += '\n\n⚡ Powered by ShopSync';

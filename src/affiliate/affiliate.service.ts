@@ -3,7 +3,6 @@ import { DatabaseService } from '../database/database.service';
 import * as bcrypt from 'bcrypt';
 import { AffiliateApplicationStatus } from '@prisma/client';
 import { ApplyAffiliateDto } from './dto/apply-affiliate.dto';
-
 import { v4 as uuidv4 } from 'uuid';
 import { EmailService } from '../email/email.service';
 
@@ -14,25 +13,32 @@ export class AffiliateService {
     private readonly email: EmailService,
   ) {}
 
-  async requestPayout(affiliateId: string, amount: number, paymentMethodId: string, payoutDetails: string) {
+  async requestPayout(
+    affiliateId: string,
+    amount: number,
+    paymentMethodId: string,
+    payoutDetails: string,
+  ) {
     if (amount <= 0) {
       throw new BadRequestException('Amount must be positive');
     }
 
-    const method = await this.db.payoutMethod.findUnique({ where: { id: paymentMethodId } });
+    const method = await this.db.payoutMethod.findUnique({
+      where: { id: paymentMethodId },
+    });
     if (!method || !method.isActive) {
       throw new BadRequestException('Invalid or inactive payout method');
     }
 
     return this.db.$transaction(async (tx) => {
-      const affiliate = await tx.user.findUnique({ 
+      const affiliate = await tx.user.findUnique({
         where: { id: affiliateId },
-        include: { 
+        include: {
           promoCodes: {
-            include: { payments: { where: { status: 'APPROVED' } } }
+            include: { payments: { where: { status: 'APPROVED' } } },
           },
-          payouts: { where: { status: { not: 'REJECTED' } } }
-        }
+          payouts: { where: { status: { not: 'REJECTED' } } },
+        },
       });
 
       if (!affiliate || affiliate.role !== 'AFFILIATE') {
@@ -61,11 +67,11 @@ export class AffiliateService {
         data: {
           affiliateId,
           amount,
-          paymentMethod: method.name, // Display name
+          paymentMethod: method.name,
           paymentMethodId: method.id,
-          payoutDetails, // Store snapshot
+          payoutDetails,
           status: 'PENDING',
-        }
+        },
       });
     });
   }
@@ -76,9 +82,20 @@ export class AffiliateService {
       include: {
         promoCodes: {
           include: {
+            shops: {
+              select: {
+                id: true,
+                name: true,
+                createdAt: true,
+                renewalCount: true,
+                isRecycled: true,
+              },
+            },
             payments: { where: { status: 'APPROVED' } },
-            shops: { select: { id: true, name: true, renewalCount: true, createdAt: true, isRecycled: true } },
-            clicks: true,
+            clicks: {
+              take: 50,
+              orderBy: { createdAt: 'desc' },
+            },
           },
         },
         payouts: { orderBy: { createdAt: 'desc' } },
@@ -92,40 +109,90 @@ export class AffiliateService {
     let lifetimeEarnings = 0;
     let totalReferrals = 0;
     let totalClicks = 0;
-
     const referrals = [];
+    const allRecentClicks = [];
+    let isSecure = true;
 
     for (const promo of affiliate.promoCodes) {
       totalReferrals += promo.shops.length;
-      totalClicks += promo.clicks.length;
+
+      const realClickCount = await this.db.promoClick.count({
+        where: { promoCodeId: promo.id },
+      });
+      totalClicks += realClickCount;
 
       for (const shop of promo.shops) {
         const shopPayments = promo.payments.filter((p) => p.shopId === shop.id);
-        const earnedFromShop = shopPayments.reduce((acc, p) => acc + Number(p.affiliateCommission), 0);
+        const earnedFromShop = shopPayments.reduce(
+          (acc, p) => acc + Number(p.affiliateCommission),
+          0,
+        );
         referrals.push({
+          shopId: shop.id,
           shopName: shop.name,
           renewalCount: shop.renewalCount,
           earned: earnedFromShop,
           joinedAt: shop.createdAt,
+          isRecycled: shop.isRecycled,
+          promoCode: promo.code,
         });
+
+        if (shop.isRecycled) isSecure = false;
       }
 
       for (const pay of promo.payments) {
         lifetimeEarnings += Number(pay.affiliateCommission);
+        if (pay.isSuspicious) isSecure = false;
       }
+
+      allRecentClicks.push(
+        ...promo.clicks.map((c) => ({
+          ...c,
+          promoCode: promo.code,
+        })),
+      );
     }
 
-    const requestedEarnings = affiliate.payouts
-      .filter((p) => p.status !== 'REJECTED')
-      .reduce((acc, p) => acc + Number(p.amount), 0);
-
-    const availableBalance = lifetimeEarnings - requestedEarnings;
-
-    const isSecure = !affiliate.promoCodes.some((pc) =>
-      pc.payments.some((p) => p.isSuspicious) || pc.shops.some((s) => s.isRecycled),
+    allRecentClicks.sort(
+      (a, b) => b.createdAt.getTime() - a.createdAt.getTime(),
     );
 
-    const conversionRate = totalClicks > 0 ? (totalReferrals / totalClicks) * 100 : 0;
+    const totalPaid = affiliate.payouts
+      .filter((p) => p.status === 'APPROVED')
+      .reduce((acc, p) => acc + Number(p.amount), 0);
+    const pendingPayouts = affiliate.payouts
+      .filter((p) => p.status === 'PENDING')
+      .reduce((acc, p) => acc + Number(p.amount), 0);
+    const availableBalance = lifetimeEarnings - totalPaid - pendingPayouts;
+
+    const conversionRate =
+      totalClicks > 0 ? (totalReferrals / totalClicks) * 100 : 0;
+
+    let promoCodes = affiliate.promoCodes;
+
+    // Self-healing: If no promo codes exist, create a default one
+    if (promoCodes.length === 0) {
+      const baseCode = (affiliate.name || affiliate.email.split('@')[0])
+        .toUpperCase()
+        .replace(/[^A-Z0-9]/g, '')
+        .substring(0, 8);
+      const uniqueSuffix = Math.random()
+        .toString(36)
+        .substring(2, 5)
+        .toUpperCase();
+      const newCode = `${baseCode}${uniqueSuffix}`;
+
+      const createdPromo = await this.db.promoCode.create({
+        data: {
+          code: newCode,
+          affiliateId: affiliate.id,
+          discountPercent: 10,
+          isActive: true,
+        },
+      });
+      // @ts-ignore
+      promoCodes = [createdPromo];
+    }
 
     return {
       lifetimeEarnings,
@@ -136,10 +203,10 @@ export class AffiliateService {
       payouts: affiliate.payouts,
       referrals,
       isSecure,
-      promoCodes: affiliate.promoCodes.map(pc => ({
+      promoCodes: promoCodes.map((pc) => ({
         id: pc.id,
         code: pc.code,
-        discountPercent: pc.discountPercent,
+        discountPercent: Number(pc.discountPercent),
         isActive: pc.isActive,
       })),
     };
@@ -165,47 +232,60 @@ export class AffiliateService {
     const payouts = await this.db.payout.findMany({
       include: {
         affiliate: {
-          select: { 
-            id: true, 
-            name: true, 
-            email: true, 
+          select: {
+            id: true,
+            name: true,
+            email: true,
             payoutDetails: true,
             promoCodes: {
               include: {
                 shops: { select: { isRecycled: true } },
-                payments: { where: { isSuspicious: true }, select: { id: true } }
-              }
-            }
-          }
-        }
+                payments: {
+                  where: { isSuspicious: true },
+                  select: { id: true },
+                },
+              },
+            },
+          },
+        },
       },
-      orderBy: { createdAt: 'desc' }
+      orderBy: { createdAt: 'desc' },
     });
 
-    return payouts.map(p => {
-      const hasSuspiciousPayments = p.affiliate.promoCodes.some(pc => pc.payments.length > 0);
-      const hasRecycledShops = p.affiliate.promoCodes.some(pc => pc.shops.some(s => s.isRecycled));
-      
-      // Clean up the deep include for the response if needed, 
-      // but keeping it simple for now by just adding fraudAlerts.
+    return payouts.map((p) => {
+      const hasSuspiciousPayments = p.affiliate.promoCodes.some(
+        (pc) => pc.payments.length > 0,
+      );
+      const hasRecycledShops = p.affiliate.promoCodes.some((pc) =>
+        pc.shops.some((s) => s.isRecycled),
+      );
+
       return {
         ...p,
         fraudAlerts: {
           suspiciousPayment: hasSuspiciousPayments,
-          recycledShop: hasRecycledShops
-        }
+          recycledShop: hasRecycledShops,
+        },
       };
     });
   }
 
-  async updatePayoutStatus(id: string, status: 'APPROVED' | 'REJECTED', rejectionReason?: string) {
+  async updatePayoutStatus(
+    id: string,
+    status: 'APPROVED' | 'REJECTED',
+    rejectionReason?: string,
+  ) {
     const payout = await this.db.payout.findUnique({ where: { id } });
     if (!payout) throw new BadRequestException('Payout not found');
-    if (payout.status !== 'PENDING') throw new BadRequestException('Payout is already processed');
+    if (payout.status !== 'PENDING')
+      throw new BadRequestException('Payout is already processed');
 
     return this.db.payout.update({
       where: { id },
-      data: { status, rejectionReason: status === 'REJECTED' ? rejectionReason : null }
+      data: {
+        status,
+        rejectionReason: status === 'REJECTED' ? rejectionReason : null,
+      },
     });
   }
 
@@ -216,18 +296,18 @@ export class AffiliateService {
         promoCodes: {
           include: {
             shops: { select: { id: true, name: true, createdAt: true } },
-            payments: { where: { status: 'APPROVED' } }
-          }
+            payments: { where: { status: 'APPROVED' } },
+          },
         },
-        payouts: true
+        payouts: true,
       },
-      orderBy: { createdAt: 'desc' }
+      orderBy: { createdAt: 'desc' },
     });
 
-    return affiliates.map(aff => {
+    return affiliates.map((aff) => {
       let lifetimeEarnings = 0;
       let totalReferrals = 0;
-      
+
       for (const promo of aff.promoCodes) {
         totalReferrals += promo.shops.length;
         for (const pay of promo.payments) {
@@ -235,8 +315,12 @@ export class AffiliateService {
         }
       }
 
-      const totalPaid = aff.payouts.filter(p => p.status === 'APPROVED').reduce((acc, p) => acc + Number(p.amount), 0);
-      const pendingPayouts = aff.payouts.filter(p => p.status === 'PENDING').reduce((acc, p) => acc + Number(p.amount), 0);
+      const totalPaid = aff.payouts
+        .filter((p) => p.status === 'APPROVED')
+        .reduce((acc, p) => acc + Number(p.amount), 0);
+      const pendingPayouts = aff.payouts
+        .filter((p) => p.status === 'PENDING')
+        .reduce((acc, p) => acc + Number(p.amount), 0);
 
       const availableBalance = lifetimeEarnings - totalPaid - pendingPayouts;
 
@@ -251,14 +335,13 @@ export class AffiliateService {
           totalReferrals,
           totalPaid,
           pendingPayouts,
-          availableBalance
-        }
+          availableBalance,
+        },
       };
     });
   }
 
   async createAffiliate(data: any) {
-    // ... logic remains same as requested previously
     const { name, email, password, promoCode } = data;
 
     const existingUser = await this.db.user.findUnique({ where: { email } });
@@ -266,7 +349,9 @@ export class AffiliateService {
       throw new BadRequestException('Email already in use');
     }
 
-    const existingPromo = await this.db.promoCode.findUnique({ where: { code: promoCode } });
+    const existingPromo = await this.db.promoCode.findUnique({
+      where: { code: promoCode },
+    });
     if (existingPromo) {
       throw new BadRequestException('Promo code already exists');
     }
@@ -279,49 +364,51 @@ export class AffiliateService {
         password: hashedPassword,
         name,
         role: 'AFFILIATE',
-        isActive: true, // Auto activate
+        isActive: true,
         promoCodes: {
           create: {
             code: promoCode,
             discountPercent: 10,
-            isActive: true
-          }
-        }
+            isActive: true,
+          },
+        },
       },
       select: {
         id: true,
         email: true,
         name: true,
         createdAt: true,
-        promoCodes: true
-      }
+        promoCodes: true,
+      },
     });
   }
 
-  // New Methods for Ecosystem Expansion
-
-  async updatePayoutDetails(affiliateId: string, details: any) {
+  async updatePayoutDetails(userId: string, details: any) {
     return this.db.user.update({
-      where: { id: affiliateId },
-      data: { payoutDetails: details }
+      where: { id: userId },
+      data: { payoutDetails: details },
     });
   }
 
-  async getPayoutMethods(onlyActive: boolean = true) {
+  async getPayoutMethods(onlyActive = true) {
     return this.db.payoutMethod.findMany({
       where: onlyActive ? { isActive: true } : {},
-      orderBy: { name: 'asc' }
+      orderBy: { name: 'asc' },
     });
   }
 
-  async createPayoutMethod(data: { name: string; type: string; icon?: string }) {
+  async createPayoutMethod(data: {
+    name: string;
+    type: string;
+    icon?: string;
+  }) {
     return this.db.payoutMethod.create({ data });
   }
 
   async updatePayoutMethod(id: string, data: any) {
     return this.db.payoutMethod.update({
       where: { id },
-      data
+      data,
     });
   }
 
@@ -329,21 +416,27 @@ export class AffiliateService {
     return this.db.payoutMethod.delete({ where: { id } });
   }
 
-  async getAffiliateProfile(id: string) {
-      return this.db.user.findUnique({
-          where: { id },
-          select: {
-              id: true,
-              name: true,
-              email: true,
-              payoutDetails: true,
-              role: true,
-              createdAt: true,
-              themePreference: true,
-              languagePreference: true,
-              profilePic: true
-          }
-      });
+  async getAffiliateProfile(userId: string) {
+    const user = await this.db.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        payoutDetails: true,
+        themePreference: true,
+        languagePreference: true,
+        profilePic: true,
+        role: true,
+        createdAt: true,
+      },
+    });
+
+    if (!user) {
+      throw new Error('User not found');
+    }
+
+    return user;
   }
 
   async submitApplication(dto: ApplyAffiliateDto) {
@@ -360,7 +453,11 @@ export class AffiliateService {
     });
   }
 
-  async updateApplicationStatus(id: string, status: AffiliateApplicationStatus, rejectionReason?: string) {
+  async updateApplicationStatus(
+    id: string,
+    status: AffiliateApplicationStatus,
+    rejectionReason?: string,
+  ) {
     const application = await this.db.affiliateApplication.findUnique({
       where: { id },
     });
@@ -370,7 +467,9 @@ export class AffiliateService {
     }
 
     if (application.status !== 'PENDING') {
-      throw new BadRequestException('Application is already ' + application.status);
+      throw new BadRequestException(
+        'Application is already ' + application.status,
+      );
     }
 
     return this.db.$transaction(async (tx) => {
@@ -378,42 +477,75 @@ export class AffiliateService {
         where: { id },
         data: {
           status,
-          rejectionReason,
+          rejectionReason: status === 'REJECTED' ? rejectionReason : null,
         },
       });
 
       if (status === 'APPROVED') {
-        // Check if user already exists
         let user = await tx.user.findUnique({
           where: { email: application.email },
         });
 
-        if (user) {
-          // If user exists, update their role to AFFILIATE
-          await tx.user.update({
-            where: { id: user.id },
-            data: { role: 'AFFILIATE' },
-          });
-        } else {
-          // Create new user
-          const tempPassword = uuidv4();
+        if (!user) {
+          const tempPassword = uuidv4().substring(0, 8);
           const hashedPassword = await bcrypt.hash(tempPassword, 10);
-          
+
           user = await tx.user.create({
             data: {
               email: application.email,
               name: application.fullName,
               password: hashedPassword,
               role: 'AFFILIATE',
+              promoCodes: {
+                create: {
+                  code:
+                    application.fullName.split(' ')[0].toUpperCase() +
+                    Math.random().toString(36).substring(2, 6).toUpperCase(),
+                  discountPercent: 10,
+                  isActive: true,
+                },
+              },
+            },
+          });
+        } else {
+          const existingPromo = await tx.promoCode.findFirst({
+            where: { affiliateId: user.id },
+          });
+
+          await tx.user.update({
+            where: { id: user.id },
+            data: {
+              role: 'AFFILIATE',
+              ...(!existingPromo
+                ? {
+                    promoCodes: {
+                      create: {
+                        code:
+                          application.fullName.split(' ')[0].toUpperCase() +
+                          Math.random()
+                            .toString(36)
+                            .substring(2, 6)
+                            .toUpperCase(),
+                        discountPercent: 10,
+                        isActive: true,
+                      },
+                    },
+                  }
+                : {}),
             },
           });
         }
 
-        // Send approval email
-        await this.email.sendAffiliateApproval(application.email, application.fullName);
+        await this.email.sendAffiliateApproval(
+          application.email,
+          application.fullName,
+        );
       } else if (status === 'REJECTED') {
-        // Send rejection email
-        await this.email.sendAffiliateRejection(application.email, application.fullName, rejectionReason || 'আবেদনটি এই মুহূর্তে গ্রহণ করা সম্ভব হয়নি।');
+        await this.email.sendAffiliateRejection(
+          application.email,
+          application.fullName,
+          rejectionReason || 'আবেদনটি এই মুহূর্তে গ্রহণ করা সম্ভব হয়নি।',
+        );
       }
 
       return updatedApp;
@@ -426,11 +558,19 @@ export class AffiliateService {
       include: {
         promoCodes: {
           include: {
-            shops: { select: { id: true, name: true, createdAt: true, renewalCount: true, isRecycled: true } },
+            shops: {
+              select: {
+                id: true,
+                name: true,
+                createdAt: true,
+                renewalCount: true,
+                isRecycled: true,
+              },
+            },
             payments: { where: { status: 'APPROVED' } },
-            clicks: { 
+            clicks: {
               take: 50,
-              orderBy: { createdAt: 'desc' }
+              orderBy: { createdAt: 'desc' },
             },
           },
         },
@@ -450,13 +590,18 @@ export class AffiliateService {
 
     for (const promo of affiliate.promoCodes) {
       totalReferrals += promo.shops.length;
-      
-      const realClickCount = await this.db.promoClick.count({ where: { promoCodeId: promo.id } });
+
+      const realClickCount = await this.db.promoClick.count({
+        where: { promoCodeId: promo.id },
+      });
       totalClicks += realClickCount;
 
       for (const shop of promo.shops) {
         const shopPayments = promo.payments.filter((p) => p.shopId === shop.id);
-        const earnedFromShop = shopPayments.reduce((acc, p) => acc + Number(p.affiliateCommission), 0);
+        const earnedFromShop = shopPayments.reduce(
+          (acc, p) => acc + Number(p.affiliateCommission),
+          0,
+        );
         referrals.push({
           shopId: shop.id,
           shopName: shop.name,
@@ -464,7 +609,7 @@ export class AffiliateService {
           earned: earnedFromShop,
           joinedAt: shop.createdAt,
           isRecycled: shop.isRecycled,
-          promoCode: promo.code
+          promoCode: promo.code,
         });
       }
 
@@ -472,22 +617,31 @@ export class AffiliateService {
         lifetimeEarnings += Number(pay.affiliateCommission);
       }
 
-      allRecentClicks.push(...promo.clicks.map(c => ({
-        ...c,
-        promoCode: promo.code
-      })));
+      allRecentClicks.push(
+        ...promo.clicks.map((c) => ({
+          ...c,
+          promoCode: promo.code,
+        })),
+      );
     }
 
-    allRecentClicks.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    allRecentClicks.sort(
+      (a, b) => b.createdAt.getTime() - a.createdAt.getTime(),
+    );
 
-    const totalPaid = affiliate.payouts.filter(p => p.status === 'APPROVED').reduce((acc, p) => acc + Number(p.amount), 0);
-    const pendingPayouts = affiliate.payouts.filter(p => p.status === 'PENDING').reduce((acc, p) => acc + Number(p.amount), 0);
+    const totalPaid = affiliate.payouts
+      .filter((p) => p.status === 'APPROVED')
+      .reduce((acc, p) => acc + Number(p.amount), 0);
+    const pendingPayouts = affiliate.payouts
+      .filter((p) => p.status === 'PENDING')
+      .reduce((acc, p) => acc + Number(p.amount), 0);
     const availableBalance = lifetimeEarnings - totalPaid - pendingPayouts;
 
-    const conversionRate = totalClicks > 0 ? (totalReferrals / totalClicks) * 100 : 0;
+    const conversionRate =
+      totalClicks > 0 ? (totalReferrals / totalClicks) * 100 : 0;
 
     const ipCounts: Record<string, { count: number; codes: Set<string> }> = {};
-    allRecentClicks.forEach(c => {
+    allRecentClicks.forEach((c) => {
       if (c.ip) {
         const entry = ipCounts[c.ip] || { count: 0, codes: new Set() };
         entry.count += 1;
@@ -504,7 +658,7 @@ export class AffiliateService {
         createdAt: affiliate.createdAt,
         isActive: affiliate.isActive,
         payoutDetails: affiliate.payoutDetails,
-        role: affiliate.role
+        role: affiliate.role,
       },
       stats: {
         lifetimeEarnings,
@@ -515,12 +669,12 @@ export class AffiliateService {
         totalClicks,
         conversionRate: Number(conversionRate.toFixed(2)),
       },
-      promoCodes: affiliate.promoCodes.map(pc => ({
+      promoCodes: affiliate.promoCodes.map((pc) => ({
         id: pc.id,
         code: pc.code,
         discountPercent: pc.discountPercent,
         isActive: pc.isActive,
-        createdAt: pc.createdAt
+        createdAt: pc.createdAt,
       })),
       referrals,
       payouts: affiliate.payouts,
@@ -530,11 +684,11 @@ export class AffiliateService {
           .map(([ip, data]) => ({
             ip,
             count: data.count,
-            codes: Array.from(data.codes)
+            codes: Array.from(data.codes),
           }))
           .sort((a, b) => b.count - a.count),
-        recentClicks: allRecentClicks.slice(0, 50)
-      }
+        recentClicks: allRecentClicks.slice(0, 50),
+      },
     };
   }
 
@@ -546,13 +700,13 @@ export class AffiliateService {
 
     return this.db.user.update({
       where: { id },
-      data: { isActive }
+      data: { isActive },
     });
   }
 
   async revokePromoCode(id: string, codeId: string) {
     const promo = await this.db.promoCode.findFirst({
-      where: { id: codeId, affiliateId: id }
+      where: { id: codeId, affiliateId: id },
     });
 
     if (!promo) {
@@ -561,7 +715,21 @@ export class AffiliateService {
 
     return this.db.promoCode.update({
       where: { id: codeId },
-      data: { isActive: false }
+      data: { isActive: false },
+    });
+  }
+
+  async updatePreferences(
+    userId: string,
+    preferences: { theme?: string; language?: string },
+  ) {
+    const data: any = {};
+    if (preferences.theme) data.themePreference = preferences.theme;
+    if (preferences.language) data.languagePreference = preferences.language;
+
+    return this.db.user.update({
+      where: { id: userId },
+      data,
     });
   }
 }

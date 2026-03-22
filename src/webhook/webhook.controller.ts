@@ -42,7 +42,7 @@ export class WebhookController {
   constructor(
     private readonly webhookService: WebhookService,
     private readonly configService: ConfigService,
-  ) { }
+  ) {}
 
   @Get()
   verifyWebhook(
@@ -147,7 +147,9 @@ export class WebhookController {
       this.configService.get<string>('FB_SIGNATURE_BYPASS') === 'true';
 
     if (bypassEnabled) {
-      this.logger.warn('⚠️ Webhook Signature BYPASS enabled! Skipping verification...');
+      this.logger.warn(
+        '⚠️ Webhook Signature BYPASS enabled! Skipping verification...',
+      );
     } else if (signature !== digest) {
       this.logger.warn(`Signature mismatch! 
         Expected: ${digest}
@@ -155,7 +157,8 @@ export class WebhookController {
         Secret MD5: ${crypto.createHash('md5').update(signatureSecret).digest('hex')}
       `);
 
-      const bypassEnabled = this.configService.get<string>('FB_SIGNATURE_BYPASS') === 'true';
+      const bypassEnabled =
+        this.configService.get<string>('FB_SIGNATURE_BYPASS') === 'true';
       if (!bypassEnabled) {
         throw new UnauthorizedException('Invalid signature');
       }

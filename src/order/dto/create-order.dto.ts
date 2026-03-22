@@ -75,7 +75,10 @@ export class CreateOrderDto {
   @IsOptional()
   serviceNotes?: string;
 
-  @ApiProperty({ description: 'Courier Name (e.g. RedX, Steadfast)', required: false })
+  @ApiProperty({
+    description: 'Courier Name (e.g. RedX, Steadfast)',
+    required: false,
+  })
   @IsString()
   @IsOptional()
   courierName?: string;
@@ -85,12 +88,18 @@ export class CreateOrderDto {
   @IsOptional()
   shipmentStatus?: string;
 
-  @ApiProperty({ description: 'Products subtotal before delivery fee', required: false })
+  @ApiProperty({
+    description: 'Products subtotal before delivery fee',
+    required: false,
+  })
   @IsNumber()
   @IsOptional()
   subTotal?: number;
 
-  @ApiProperty({ description: 'Delivery fee applied to order', required: false })
+  @ApiProperty({
+    description: 'Delivery fee applied to order',
+    required: false,
+  })
   @IsNumber()
   @IsOptional()
   deliveryFee?: number;

@@ -8,9 +8,9 @@ import { OrderModule } from '../order/order.module';
 import { ChatGateway } from './chat.gateway';
 
 @Module({
-    imports: [DatabaseModule, FacebookModule, AuthModule, OrderModule],
-    controllers: [InboxController],
-    providers: [InboxService, ChatGateway],
-    exports: [InboxService, ChatGateway],
+  imports: [DatabaseModule, FacebookModule, AuthModule, OrderModule],
+  controllers: [InboxController],
+  providers: [InboxService, ChatGateway],
+  exports: [InboxService, ChatGateway],
 })
-export class InboxModule { }
+export class InboxModule {}

@@ -19,4 +19,4 @@ import { FacebookCapiProcessor } from './facebook-capi.processor';
   providers: [FacebookService, FacebookCapiService, FacebookCapiProcessor],
   exports: [FacebookService, FacebookCapiService, BullModule],
 })
-export class FacebookModule { }
+export class FacebookModule {}

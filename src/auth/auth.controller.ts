@@ -15,10 +15,7 @@ import { Response } from 'express';
 import { AuthService } from './auth.service';
 import { UploadService } from '../upload/upload.service';
 import { FileInterceptor } from '@nestjs/platform-express';
-import {
-  UploadedFile,
-  UseInterceptors,
-} from '@nestjs/common';
+import { UploadedFile, UseInterceptors } from '@nestjs/common';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { JwtAuthGuard } from './jwt-auth.guard';
@@ -29,7 +26,7 @@ export class AuthController {
   constructor(
     private authService: AuthService,
     private uploadService: UploadService,
-  ) { }
+  ) {}
 
   @HttpCode(HttpStatus.OK)
   @Post('login')
@@ -39,17 +36,25 @@ export class AuthController {
 
   @HttpCode(HttpStatus.CREATED)
   @Post('register')
-  signUp(
-    @Body() registerDto: RegisterDto,
-    @Req() req: any,
-  ) {
-    const rawIp = req.headers['cf-connecting-ip'] || req.headers['x-forwarded-for'] || req.socket?.remoteAddress;
-    const clientIp = typeof rawIp === 'string' ? rawIp.split(',')[0].trim() : Array.isArray(rawIp) ? rawIp[0].trim() : '';
+  signUp(@Body() registerDto: RegisterDto, @Req() req: any) {
+    const rawIp =
+      req.headers['cf-connecting-ip'] ||
+      req.headers['x-forwarded-for'] ||
+      req.socket?.remoteAddress;
+    const clientIp =
+      typeof rawIp === 'string'
+        ? rawIp.split(',')[0].trim()
+        : Array.isArray(rawIp)
+          ? rawIp[0].trim()
+          : '';
 
     const reqDetails = {
       ip: clientIp,
       userAgent: req.headers['user-agent'],
-      sourceUrl: req.headers.referer || req.headers.origin || 'https://www.shopsync.it.com/',
+      sourceUrl:
+        req.headers.referer ||
+        req.headers.origin ||
+        'https://www.shopsync.it.com/',
       firstName: registerDto.firstName,
       lastName: registerDto.lastName,
       phone: registerDto.phone,
@@ -58,7 +63,7 @@ export class AuthController {
       registerDto.email,
       registerDto.password,
       registerDto.shopName,
-      reqDetails
+      reqDetails,
     );
   }
 
@@ -102,7 +107,6 @@ export class AuthController {
     return this.authService.handleFacebookDeletion(signedRequest);
   }
 
-
   @UseGuards(JwtAuthGuard)
   @HttpCode(HttpStatus.OK)
   @Post('tour/complete')
@@ -117,7 +121,11 @@ export class AuthController {
     @CurrentUser('id') userId: string,
     @Body() body: { currentPassword: string; newPassword: string },
   ) {
-    return this.authService.changePassword(userId, body.currentPassword, body.newPassword);
+    return this.authService.changePassword(
+      userId,
+      body.currentPassword,
+      body.newPassword,
+    );
   }
 
   @UseGuards(JwtAuthGuard)
@@ -135,7 +143,12 @@ export class AuthController {
   @Patch('update-preferences')
   async updatePreferences(
     @CurrentUser('id') userId: string,
-    @Body() body: { themePreference?: string; languagePreference?: string; emailNotifications?: boolean },
+    @Body()
+    body: {
+      themePreference?: string;
+      languagePreference?: string;
+      emailNotifications?: boolean;
+    },
   ) {
     return this.authService.updatePreferences(userId, body);
   }

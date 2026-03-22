@@ -16,6 +16,6 @@ import { IntegrationWebhookController } from './integration-webhook.controller';
   ],
   providers: [IntegrationService, SyncProcessor, EmbeddingsService],
   controllers: [IntegrationController, IntegrationWebhookController],
-  exports: [IntegrationService, EmbeddingsService]
+  exports: [IntegrationService, EmbeddingsService],
 })
-export class IntegrationModule { }
+export class IntegrationModule {}

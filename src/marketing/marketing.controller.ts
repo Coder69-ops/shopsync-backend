@@ -16,7 +16,7 @@ import { UserRole } from '@prisma/client';
 @Controller('marketing')
 @UseGuards(AuthGuard('jwt'), RolesGuard)
 export class MarketingController {
-  constructor(private readonly marketingService: MarketingService) { }
+  constructor(private readonly marketingService: MarketingService) {}
 
   @Post('campaign')
   @Roles(UserRole.ADMIN)

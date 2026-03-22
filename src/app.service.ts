@@ -44,7 +44,7 @@ const PLAN_CONFIGS = [
 export class AppService implements OnApplicationBootstrap {
   private readonly logger = new Logger(AppService.name);
 
-  constructor(private readonly db: DatabaseService) { }
+  constructor(private readonly db: DatabaseService) {}
 
   async onApplicationBootstrap() {
     await this.seedPlanConfigs();
@@ -71,7 +71,8 @@ export class AppService implements OnApplicationBootstrap {
       status: 'online',
       version: '1.1.0',
       timestamp: new Date().toISOString(),
-      message: 'Welcome to the ShopSync backend infrastructure. All systems operational.',
+      message:
+        'Welcome to the ShopSync backend infrastructure. All systems operational.',
     };
   }
 

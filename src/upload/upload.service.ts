@@ -13,10 +13,14 @@ export class UploadService {
   constructor(private configService: ConfigService) {
     const endpoint = this.configService.get<string>('R2_ENDPOINT');
     const accessKeyId = this.configService.get<string>('R2_ACCESS_KEY_ID');
-    const secretAccessKey = this.configService.get<string>('R2_SECRET_ACCESS_KEY');
+    const secretAccessKey = this.configService.get<string>(
+      'R2_SECRET_ACCESS_KEY',
+    );
 
     if (!endpoint || !accessKeyId || !secretAccessKey) {
-      console.warn('⚠️ WARNING: R2 Storage credentials are not fully configured in the environment.');
+      console.warn(
+        '⚠️ WARNING: R2 Storage credentials are not fully configured in the environment.',
+      );
     }
 
     this.s3Client = new S3Client({
@@ -27,8 +31,10 @@ export class UploadService {
         secretAccessKey: secretAccessKey || 'missing-secret',
       },
     });
-    this.bucketName = this.configService.get<string>('R2_BUCKET_NAME') || 'missing-bucket';
-    this.publicDomain = this.configService.get<string>('R2_PUBLIC_DOMAIN') || 'missing-domain';
+    this.bucketName =
+      this.configService.get<string>('R2_BUCKET_NAME') || 'missing-bucket';
+    this.publicDomain =
+      this.configService.get<string>('R2_PUBLIC_DOMAIN') || 'missing-domain';
   }
 
   async uploadFile(

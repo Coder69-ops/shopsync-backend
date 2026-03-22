@@ -32,7 +32,7 @@ export class SuperAdminController {
     private readonly authService: AuthService,
     private readonly healthService: HealthService,
     private readonly systemConfigService: SystemConfigService,
-  ) { }
+  ) {}
 
   @Get('config')
   async getConfig() {
@@ -45,8 +45,14 @@ export class SuperAdminController {
   }
 
   @Post('config/test-ai')
-  async testAiConnection(@Body() body: { provider: string; model: string; apiKey?: string }) {
-    return this.systemConfigService.testAiConnection(body.provider, body.model, body.apiKey);
+  async testAiConnection(
+    @Body() body: { provider: string; model: string; apiKey?: string },
+  ) {
+    return this.systemConfigService.testAiConnection(
+      body.provider,
+      body.model,
+      body.apiKey,
+    );
   }
 
   @Get('email-presets')
@@ -126,10 +132,7 @@ export class SuperAdminController {
   }
 
   @Delete('plans/:id')
-  async deletePlanConfig(
-    @CurrentUser() admin: User,
-    @Param('id') id: string,
-  ) {
+  async deletePlanConfig(@CurrentUser() admin: User, @Param('id') id: string) {
     return this.superAdminService.deletePlanConfig(id, admin.id);
   }
 

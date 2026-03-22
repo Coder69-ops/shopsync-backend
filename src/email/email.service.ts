@@ -12,7 +12,8 @@ export class EmailService {
   constructor(private readonly systemConfigService: SystemConfigService) {
     this.resend = new Resend(process.env.RESEND_API_KEY);
     this.frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3001';
-    this.smtpFrom = process.env.SMTP_FROM || 'ShopSync <no-reply@komolina.store>';
+    this.smtpFrom =
+      process.env.SMTP_FROM || 'ShopSync <no-reply@komolina.store>';
   }
 
   private async getTemplate(
@@ -50,15 +51,24 @@ export class EmailService {
       template = template.replace(/#LOGO_URL#/g, logoUrl);
 
       // New placeholders
-      template = template.replace(/#UNSUBSCRIBE_URL#/g, `${this.frontendUrl}/unsubscribe`);
-      template = template.replace(/#SHOP_ADDRESS#/g, config.emailSupportContact || 'Dhaka, Bangladesh');
-      template = template.replace(/#SOCIAL_LINKS#/g, `
+      template = template.replace(
+        /#UNSUBSCRIBE_URL#/g,
+        `${this.frontendUrl}/unsubscribe`,
+      );
+      template = template.replace(
+        /#SHOP_ADDRESS#/g,
+        config.emailSupportContact || 'Dhaka, Bangladesh',
+      );
+      template = template.replace(
+        /#SOCIAL_LINKS#/g,
+        `
         <div style="margin-top: 20px;">
           <a href="#" style="margin: 0 10px; color: inherit; text-decoration: none;">Facebook</a>
           <a href="#" style="margin: 0 10px; color: inherit; text-decoration: none;">Instagram</a>
           <a href="#" style="margin: 0 10px; color: inherit; text-decoration: none;">Twitter</a>
         </div>
-      `);
+      `,
+      );
       return template;
     }
 
@@ -126,7 +136,12 @@ export class EmailService {
 </html>`;
   }
 
-  private async sendEmail(to: string, subject: string, html: string, idempotencyKey?: string) {
+  private async sendEmail(
+    to: string,
+    subject: string,
+    html: string,
+    idempotencyKey?: string,
+  ) {
     if (!to) return false;
 
     // Get sender branding from config
@@ -166,13 +181,16 @@ export class EmailService {
       }
     }
 
-    const { data, error } = await this.resend.emails.send({
-      from: formattedFrom,
-      to,
-      subject,
-      html,
-      replyTo: config.emailSupportContact || 'support@shopsync.ai',
-    }, idempotencyKey ? { idempotencyKey } : undefined);
+    const { data, error } = await this.resend.emails.send(
+      {
+        from: formattedFrom,
+        to,
+        subject,
+        html,
+        replyTo: config.emailSupportContact || 'support@shopsync.ai',
+      },
+      idempotencyKey ? { idempotencyKey } : undefined,
+    );
 
     if (error) {
       console.error(`[RESEND ERROR] Failed to send email to ${to}:`, error);
@@ -187,8 +205,11 @@ export class EmailService {
     const config = (await this.systemConfigService.getConfig()) as any;
     const resetLink = `${this.frontendUrl}/reset-password?token=${token}`;
 
-    const subject = config.forgotPasswordEmailSubject || 'Reset your ShopSync password';
-    let body = config.forgotPasswordEmailBody || `
+    const subject =
+      config.forgotPasswordEmailSubject || 'Reset your ShopSync password';
+    let body =
+      config.forgotPasswordEmailBody ||
+      `
       <h1 style="color: #18181b; font-size: 24px; font-weight: 800; margin-top: 0; margin-bottom: 16px; letter-spacing: -0.025em;">Reset Your Password</h1>
       <p style="margin: 0 0 16px 0;">Hello,</p>
       <p style="margin: 0 0 16px 0;">We received a request to reset your password for your ShopSync account. If you didn't make this request, you can safely ignore this email.</p>
@@ -198,7 +219,12 @@ export class EmailService {
     body = body.replace(/#RESET_LINK#/g, resetLink);
     body = body.replace(/#USER_NAME#/g, to.split('@')[0]);
 
-    return this.sendEmail(to, subject, await this.getTemplate(body), `reset-password/${token}`);
+    return this.sendEmail(
+      to,
+      subject,
+      await this.getTemplate(body),
+      `reset-password/${token}`,
+    );
   }
 
   async sendVerificationEmail(to: string, token: string) {
@@ -206,7 +232,9 @@ export class EmailService {
     const verificationLink = `${this.frontendUrl}/verify-email?token=${token}`;
 
     const subject = config.verifyEmailSubject || 'Verify your ShopSync account';
-    let body = config.verifyEmailBody || `
+    let body =
+      config.verifyEmailBody ||
+      `
       <div style="text-align: center; margin-bottom: 32px;">
         <div style="display: inline-block; background-color: #eff6ff; padding: 20px; border-radius: 32px; margin-bottom: 24px;">
             <span style="font-size: 48px;">✉️</span>
@@ -221,7 +249,12 @@ export class EmailService {
     body = body.replace(/#VERIFY_LINK#/g, verificationLink);
     body = body.replace(/#USER_NAME#/g, to.split('@')[0]);
 
-    return this.sendEmail(to, subject, await this.getTemplate(body), `verify-email/${token}`);
+    return this.sendEmail(
+      to,
+      subject,
+      await this.getTemplate(body),
+      `verify-email/${token}`,
+    );
   }
 
   async sendWelcomeMerchant(to: string, shopName: string) {
@@ -250,15 +283,28 @@ export class EmailService {
       <p style="margin: 0; font-weight: 500;">Let's build something amazing together!</p>`;
     }
 
-    const subject = config.welcomeEmailSubject || `Welcome to the future of commerce, ${shopName}! 🚀`;
-    return this.sendEmail(to, subject, await this.getTemplate(content, dashboardLink, 'Go to Dashboard', shopName), `welcome-merchant/${to}`);
+    const subject =
+      config.welcomeEmailSubject ||
+      `Welcome to the future of commerce, ${shopName}! 🚀`;
+    return this.sendEmail(
+      to,
+      subject,
+      await this.getTemplate(
+        content,
+        dashboardLink,
+        'Go to Dashboard',
+        shopName,
+      ),
+      `welcome-merchant/${to}`,
+    );
   }
 
   async sendNewShopSignupAlert(shopData: any) {
     const config = (await this.systemConfigService.getConfig()) as any;
     if (!config.enableAdminAlerts) return false;
 
-    const superAdminEmail = process.env.SUPERADMIN_EMAIL || 'admin@komolina.store';
+    const superAdminEmail =
+      process.env.SUPERADMIN_EMAIL || 'admin@komolina.store';
     let content = '';
 
     if (config.adminAlertEmailBody) {
@@ -291,8 +337,14 @@ export class EmailService {
       </div>`;
     }
 
-    const subject = config.adminAlertEmailSubject || `🏢 New Shop Signup: ${shopData.name}`;
-    return this.sendEmail(superAdminEmail, subject, await this.getTemplate(content), `admin-new-shop/${shopData.id}`);
+    const subject =
+      config.adminAlertEmailSubject || `🏢 New Shop Signup: ${shopData.name}`;
+    return this.sendEmail(
+      superAdminEmail,
+      subject,
+      await this.getTemplate(content),
+      `admin-new-shop/${shopData.id}`,
+    );
   }
 
   async sendNewOrderAlert(to: string, order: any, shopName: string) {
@@ -304,9 +356,12 @@ export class EmailService {
 
     // Parse items if they are stringified
     let items = order.items;
-    try { if (typeof items === 'string') items = JSON.parse(items); } catch (e) { }
+    try {
+      if (typeof items === 'string') items = JSON.parse(items);
+    } catch (e) {}
 
-    const itemListHtml = Array.isArray(items) ? `
+    const itemListHtml = Array.isArray(items)
+      ? `
       <table width="100%" cellpadding="0" cellspacing="0" style="margin: 20px 0; border-top: 1px solid #e2e8f0;">
         <thead>
           <tr>
@@ -316,16 +371,21 @@ export class EmailService {
           </tr>
         </thead>
         <tbody>
-          ${items.map((item: any) => `
+          ${items
+            .map(
+              (item: any) => `
             <tr>
               <td style="padding: 12px 0; border-top: 1px solid #f1f5f9; font-size: 14px; color: #334155;">${item.name}</td>
               <td align="center" style="padding: 12px 0; border-top: 1px solid #f1f5f9; font-size: 14px; color: #334155;">${item.quantity}</td>
               <td align="right" style="padding: 12px 0; border-top: 1px solid #f1f5f9; font-size: 14px; font-weight: 600; color: #0f172a;">${item.price * item.quantity} BDT</td>
             </tr>
-          `).join('')}
+          `,
+            )
+            .join('')}
         </tbody>
       </table>
-    ` : '';
+    `
+      : '';
 
     let content = '';
     if (config.newOrderEmailBody) {
@@ -358,17 +418,27 @@ export class EmailService {
       </div>`;
     }
 
-    const subject = (config.newOrderEmailSubject || 'New Order Received! 🛍️').replace('#ID#', orderIdShort);
-    return this.sendEmail(to, subject, await this.getTemplate(content, orderLink, 'View Order', shopName), `new-order-alert/${order.id}`);
+    const subject = (
+      config.newOrderEmailSubject || 'New Order Received! 🛍️'
+    ).replace('#ID#', orderIdShort);
+    return this.sendEmail(
+      to,
+      subject,
+      await this.getTemplate(content, orderLink, 'View Order', shopName),
+      `new-order-alert/${order.id}`,
+    );
   }
 
   async sendOrderConfirmation(to: string, order: any, shopName: string) {
     const orderIdShort = order.id.slice(0, 8).toUpperCase();
 
     let items = order.items;
-    try { if (typeof items === 'string') items = JSON.parse(items); } catch (e) { }
+    try {
+      if (typeof items === 'string') items = JSON.parse(items);
+    } catch (e) {}
 
-    const itemListHtml = Array.isArray(items) ? `
+    const itemListHtml = Array.isArray(items)
+      ? `
       <table width="100%" cellpadding="0" cellspacing="0" style="margin: 20px 0; border-top: 1px solid #e2e8f0;">
         <thead>
           <tr>
@@ -378,16 +448,21 @@ export class EmailService {
           </tr>
         </thead>
         <tbody>
-          ${items.map((item: any) => `
+          ${items
+            .map(
+              (item: any) => `
             <tr>
               <td style="padding: 12px 0; border-top: 1px solid #f1f5f9; font-size: 14px; color: #334155;">${item.name}</td>
               <td align="center" style="padding: 12px 0; border-top: 1px solid #f1f5f9; font-size: 14px; color: #334155;">${item.quantity}</td>
               <td align="right" style="padding: 12px 0; border-top: 1px solid #f1f5f9; font-size: 14px; font-weight: 600; color: #0f172a;">${item.price * item.quantity} BDT</td>
             </tr>
-          `).join('')}
+          `,
+            )
+            .join('')}
         </tbody>
       </table>
-    ` : '';
+    `
+      : '';
 
     const content = `
       <h1 style="color: #18181b; font-size: 24px; font-weight: 800; margin-top: 0; margin-bottom: 16px; letter-spacing: -0.025em;">Order Confirmed! ✅</h1>
@@ -406,7 +481,12 @@ export class EmailService {
             <p style="margin: 0; font-size: 14px; color: #334155; line-height: 1.5;">${order.customerAddress}</p>
         </div>
       </div>`;
-    return this.sendEmail(to, `✅ Your ${shopName} order #${orderIdShort} is confirmed!`, await this.getTemplate(content, undefined, undefined, shopName), `order-confirmation/${order.id}`);
+    return this.sendEmail(
+      to,
+      `✅ Your ${shopName} order #${orderIdShort} is confirmed!`,
+      await this.getTemplate(content, undefined, undefined, shopName),
+      `order-confirmation/${order.id}`,
+    );
   }
 
   async sendOrderCancelled(to: string, order: any, shopName: string) {
@@ -419,7 +499,12 @@ export class EmailService {
       </div>
       <p style="margin: 0 0 16px 0;">Hello ${order.customerName}, your order has been cancelled.</p>
       <p style="margin: 0;">If you didn't request this or have questions, please reach out to us by replying to our messages on Facebook.</p>`;
-    return this.sendEmail(to, `🚫 Order #${orderIdShort} Cancelled - ${shopName}`, await this.getTemplate(content, undefined, undefined, shopName), `order-cancelled/${order.id}`);
+    return this.sendEmail(
+      to,
+      `🚫 Order #${orderIdShort} Cancelled - ${shopName}`,
+      await this.getTemplate(content, undefined, undefined, shopName),
+      `order-cancelled/${order.id}`,
+    );
   }
 
   async sendOrderReturned(to: string, order: any, shopName: string) {
@@ -430,7 +515,12 @@ export class EmailService {
       <div style="background-color: #f4f4f5; border-radius: 12px; padding: 16px; margin-bottom: 16px;">
         <p style="margin: 0; color: #3f3f46; font-size: 14px;">Our team will process any necessary refunds or exchanges within <strong style="color: #18181b;">3-5 business days</strong>.</p>
       </div>`;
-    return this.sendEmail(to, `📦 Return Processed for Order #${orderIdShort}`, await this.getTemplate(content, undefined, undefined, shopName), `order-returned/${order.id}`);
+    return this.sendEmail(
+      to,
+      `📦 Return Processed for Order #${orderIdShort}`,
+      await this.getTemplate(content, undefined, undefined, shopName),
+      `order-returned/${order.id}`,
+    );
   }
 
   async sendLowStockAlert(to: string, shopName: string, product: any) {
@@ -460,11 +550,28 @@ export class EmailService {
       <p style="margin: 0; color: #3f3f46;">Restock soon to avoid missing out on potential sales!</p>`;
     }
 
-    const subject = (config.lowStockEmailSubject || '⚠️ Low Stock Alert').replace('#PRODUCT#', product.name);
-    return this.sendEmail(to, subject, await this.getTemplate(content, productsLink, 'Manage Inventory', shopName), `low-stock/${product.id}/${product.stock}`);
+    const subject = (
+      config.lowStockEmailSubject || '⚠️ Low Stock Alert'
+    ).replace('#PRODUCT#', product.name);
+    return this.sendEmail(
+      to,
+      subject,
+      await this.getTemplate(
+        content,
+        productsLink,
+        'Manage Inventory',
+        shopName,
+      ),
+      `low-stock/${product.id}/${product.stock}`,
+    );
   }
 
-  async sendShippingUpdate(to: string, order: any, shopName: string, trackingUrl?: string) {
+  async sendShippingUpdate(
+    to: string,
+    order: any,
+    shopName: string,
+    trackingUrl?: string,
+  ) {
     const orderIdShort = order.id.slice(0, 8).toUpperCase();
     const content = `
       <h1 style="color: #18181b; font-size: 24px; font-weight: 800; margin-top: 0; margin-bottom: 16px; letter-spacing: -0.025em;">Your Package is on the Way! 🚚</h1>
@@ -476,10 +583,25 @@ export class EmailService {
       </div>
       
       <p style="margin: 0; color: #3f3f46;">You should receive it within 2-3 business days.</p>`;
-    return this.sendEmail(to, `🚚 Your ${shopName} order #${orderIdShort} has shipped!`, await this.getTemplate(content, trackingUrl, 'Track Your Order', shopName), `shipping-update/${order.id}/${order.status}`);
+    return this.sendEmail(
+      to,
+      `🚚 Your ${shopName} order #${orderIdShort} has shipped!`,
+      await this.getTemplate(
+        content,
+        trackingUrl,
+        'Track Your Order',
+        shopName,
+      ),
+      `shipping-update/${order.id}/${order.status}`,
+    );
   }
 
-  async sendPaymentReceived(to: string, amount: number, transactionId: string, shopName: string) {
+  async sendPaymentReceived(
+    to: string,
+    amount: number,
+    transactionId: string,
+    shopName: string,
+  ) {
     const content = `
       <h1 style="color: #18181b; font-size: 24px; font-weight: 800; margin-top: 0; margin-bottom: 16px; letter-spacing: -0.025em;">Payment Proof Received 📥</h1>
       
@@ -492,7 +614,12 @@ export class EmailService {
       </div>
       
       <p style="margin: 0;">Our team will verify the transaction within 24 hours. Your subscription will be activated automatically once verified.</p>`;
-    return this.sendEmail(to, `📥 Payment Proof Received - TrxID: ${transactionId}`, await this.getTemplate(content, undefined, undefined, shopName), `payment-received/${transactionId}`);
+    return this.sendEmail(
+      to,
+      `📥 Payment Proof Received - TrxID: ${transactionId}`,
+      await this.getTemplate(content, undefined, undefined, shopName),
+      `payment-received/${transactionId}`,
+    );
   }
 
   async sendSubscriptionActivated(to: string, plan: string) {
@@ -507,7 +634,17 @@ export class EmailService {
       
       <p style="margin: 0 0 16px 0;">Your payment has been verified and your <strong style="color: #3b82f6; font-size: 18px;">${plan}</strong> plan is now active.</p>
       <p style="margin: 0;">All subscription features are now unlocked for your shop. Get ready to automate everything!</p>`;
-    return this.sendEmail(to, `✨ Your ShopSync ${plan} Plan is now Active!`, await this.getTemplate(content, this.frontendUrl, 'Go to Dashboard', undefined), `sub-activated/${to}/${plan}/${new Date().toISOString().slice(0, 7)}`);
+    return this.sendEmail(
+      to,
+      `✨ Your ShopSync ${plan} Plan is now Active!`,
+      await this.getTemplate(
+        content,
+        this.frontendUrl,
+        'Go to Dashboard',
+        undefined,
+      ),
+      `sub-activated/${to}/${plan}/${new Date().toISOString().slice(0, 7)}`,
+    );
   }
 
   async sendPaymentRejected(to: string, reason: string) {
@@ -521,7 +658,16 @@ export class EmailService {
       </div>
       
       <p style="margin: 0;">Please double check your transaction details and submit again in the billing section.</p>`;
-    return this.sendEmail(to, `❌ Payment Verification Failed`, await this.getTemplate(content, `${this.frontendUrl}/billing`, 'Review Payment', undefined));
+    return this.sendEmail(
+      to,
+      `❌ Payment Verification Failed`,
+      await this.getTemplate(
+        content,
+        `${this.frontendUrl}/billing`,
+        'Review Payment',
+        undefined,
+      ),
+    );
   }
 
   async sendTrialExpiryReminder(to: string, daysLeft: number) {
@@ -535,7 +681,16 @@ export class EmailService {
       
       <p style="margin: 0 0 16px 0;">Don't lose access to voice-to-text, auto-courier booking, and non-stop AI order processing.</p>
       <p style="margin: 0; font-weight: 600; color: #18181b;">Upgrade now to keep your shop running at full power!</p>`;
-    return this.sendEmail(to, `⏳ Your ShopSync Trial expires in ${daysLeft} days!`, await this.getTemplate(content, `${this.frontendUrl}/billing`, 'Upgrade Plan', undefined));
+    return this.sendEmail(
+      to,
+      `⏳ Your ShopSync Trial expires in ${daysLeft} days!`,
+      await this.getTemplate(
+        content,
+        `${this.frontendUrl}/billing`,
+        'Upgrade Plan',
+        undefined,
+      ),
+    );
   }
 
   async sendTrialExpired(to: string) {
@@ -546,7 +701,16 @@ export class EmailService {
       </div>
       <p style="margin: 0 0 16px 0; text-align: center;">Your ShopSync Pro Trial has expired and your account has been moved to the Free plan. AI order processing and premium features are currently restricted.</p>
       <p style="margin: 0; text-align: center; font-weight: 600;">Upgrade now to reactivate your AI assistant and continue Growing.</p>`;
-    return this.sendEmail(to, `Locked Your ShopSync Trial has Expired`, await this.getTemplate(content, `${this.frontendUrl}/billing`, 'Choose a Plan', undefined));
+    return this.sendEmail(
+      to,
+      `Locked Your ShopSync Trial has Expired`,
+      await this.getTemplate(
+        content,
+        `${this.frontendUrl}/billing`,
+        'Choose a Plan',
+        undefined,
+      ),
+    );
   }
 
   async sendAffiliateApproval(to: string, name: string) {
@@ -560,8 +724,17 @@ export class EmailService {
       </div>
       <p style="margin: 0;">এখনি কাজ শুরু করুন এবং প্যাসিভ ইনকাম এনজয় করুন!</p>
     `;
-    const actionUrl = `${this.frontendUrl}/forgot-password`; 
-    return this.sendEmail(to, `অভিনন্দন! আপনার অ্যাফিলিয়েট আবেদন মঞ্জুর হয়েছে 🎉`, await this.getTemplate(content, actionUrl, 'সেট পাসওয়ার্ড ও লগইন করুন', undefined));
+    const actionUrl = `${this.frontendUrl}/forgot-password`;
+    return this.sendEmail(
+      to,
+      `অভিনন্দন! আপনার অ্যাফিলিয়েট আবেদন মঞ্জুর হয়েছে 🎉`,
+      await this.getTemplate(
+        content,
+        actionUrl,
+        'সেট পাসওয়ার্ড ও লগইন করুন',
+        undefined,
+      ),
+    );
   }
 
   async sendAffiliateRejection(to: string, name: string, reason: string) {
@@ -575,6 +748,11 @@ export class EmailService {
       </div>
       <p style="margin: 0;">আপনার ভবিষ্যতের জন্য শুভকামনা রইল।</p>
     `;
-    return this.sendEmail(to, `আপনার অ্যাফিলিয়েট আবেদন সংক্রান্ত তথ্য`, await this.getTemplate(content), `affiliate-reject/${to}`);
+    return this.sendEmail(
+      to,
+      `আপনার অ্যাফিলিয়েট আবেদন সংক্রান্ত তথ্য`,
+      await this.getTemplate(content),
+      `affiliate-reject/${to}`,
+    );
   }
 }

@@ -3,7 +3,7 @@ import { WebhooksController } from './webhooks.controller';
 import { DatabaseModule } from '../database/database.module';
 
 @Module({
-    imports: [DatabaseModule],
-    controllers: [WebhooksController],
+  imports: [DatabaseModule],
+  controllers: [WebhooksController],
 })
-export class WebhooksModule { }
+export class WebhooksModule {}
